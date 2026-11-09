@@ -30,21 +30,23 @@ describe('isThrottled', () => {
 
 describe('evaluateRule', () => {
   const base: AlertRule = { id: 'r1', kind: 'price', direction: 'up', threshold: 600, enabled: true }
+  const OPEN_OPTS = { now: 0, throttleMs: THROTTLE, marketOpen: true }
+  const CLOSED_OPTS = { now: 0, throttleMs: THROTTLE, marketOpen: false }
 
   it('TC-ALT-01 价格上穿 → 触发', () => {
-    expect(evaluateRule(base, 599, 601, { now: 0, throttleMs: THROTTLE, marketOpen: true })).toBe(true)
+    expect(evaluateRule(base, 599, 601, OPEN_OPTS)).toBe(true)
   })
   it('TC-ALT-02 未穿越 → 不触发', () => {
-    expect(evaluateRule(base, 599, 599, { now: 0, throttleMs: THROTTLE, marketOpen: true })).toBe(false)
+    expect(evaluateRule(base, 599, 599, OPEN_OPTS)).toBe(false)
   })
   it('TC-ALT-03 3 分钟内第二次穿越 → 不触发(节流)', () => {
     const rule: AlertRule = { ...base, lastTriggeredAt: 1000 }
-    expect(evaluateRule(rule, 599, 601, { now: 1000 + THROTTLE - 1, throttleMs: THROTTLE, marketOpen: true })).toBe(false)
+    expect(evaluateRule(rule, 599, 601, { ...OPEN_OPTS, now: 1000 + THROTTLE - 1 })).toBe(false)
   })
   it('TC-ALT-04 休市 → 不评估', () => {
-    expect(evaluateRule(base, 599, 601, { now: 0, throttleMs: THROTTLE, marketOpen: false })).toBe(false)
+    expect(evaluateRule(base, 599, 601, CLOSED_OPTS)).toBe(false)
   })
   it('禁用规则 → 不触发', () => {
-    expect(evaluateRule({ ...base, enabled: false }, 599, 601, { now: 0, throttleMs: THROTTLE, marketOpen: true })).toBe(false)
+    expect(evaluateRule({ ...base, enabled: false }, 599, 601, OPEN_OPTS)).toBe(false)
   })
 })

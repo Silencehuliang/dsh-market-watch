@@ -55,19 +55,18 @@ export interface PositionResult {
   isClosed: boolean
 }
 
+function zeroResult(isClosed: boolean): PositionResult {
+  return { dayProfit: 0, cumProfit: 0, profitRate: 0, marketValue: 0, isClosed }
+}
+
 /** 评估持仓:清仓归零;无有效价格(收盘后)保持上次结果,不归零。 */
 export function evaluatePosition(
   position: Position,
   quote: QuoteLike,
   prev?: PositionResult,
 ): PositionResult {
-  if (position.closed) {
-    return { dayProfit: 0, cumProfit: 0, profitRate: 0, marketValue: 0, isClosed: true }
-  }
-  if (quote.price <= 0) {
-    if (prev) return prev
-    return { dayProfit: 0, cumProfit: 0, profitRate: 0, marketValue: 0, isClosed: false }
-  }
+  if (position.closed) return zeroResult(true)
+  if (quote.price <= 0) return prev ?? zeroResult(false)
   return {
     dayProfit: dayProfit(position.shares, quote.price, quote.prevClose),
     cumProfit: cumProfit(position.shares, quote.price, position.costPrice),

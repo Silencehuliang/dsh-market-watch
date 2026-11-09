@@ -5,43 +5,65 @@
 
 export type MarketStatus = 'pre' | 'open' | 'lunch' | 'post'
 
-function minutes(h: number, m: number): number {
+type TimeOfDay = [number, number]
+interface Session {
+  open: TimeOfDay
+  close: TimeOfDay
+}
+
+function toMinutes([h, m]: TimeOfDay): number {
   return h * 60 + m
 }
 
-function inSession(
+/** 通用时段判定:给定交易时段列表与可选午休区间,返回 pre/open/lunch/post。 */
+function sessionFromRanges(
   h: number,
   m: number,
-  open: [number, number],
-  close: [number, number],
-): boolean {
-  const t = minutes(h, m)
-  return t >= minutes(open[0], open[1]) && t < minutes(close[0], close[1])
+  sessions: Session[],
+  lunch: Session | null,
+): MarketStatus {
+  const t = h * 60 + m
+  for (const s of sessions) {
+    if (t >= toMinutes(s.open) && t < toMinutes(s.close)) return 'open'
+  }
+  if (lunch && t >= toMinutes(lunch.open) && t < toMinutes(lunch.close)) return 'lunch'
+  return t < toMinutes(sessions[0]!.open) ? 'pre' : 'post'
 }
 
 /** A 股(北京时间):09:30-11:30、13:00-15:00。 */
 export function aStockSession(h: number, m: number): MarketStatus {
-  if (inSession(h, m, [9, 30], [11, 30])) return 'open'
-  if (inSession(h, m, [13, 0], [15, 0])) return 'open'
-  if (minutes(h, m) >= minutes(11, 30) && minutes(h, m) < minutes(13, 0)) return 'lunch'
-  if (minutes(h, m) < minutes(9, 30)) return 'pre'
-  return 'post'
+  return sessionFromRanges(
+    h,
+    m,
+    [
+      { open: [9, 30], close: [11, 30] },
+      { open: [13, 0], close: [15, 0] },
+    ],
+    { open: [11, 30], close: [13, 0] },
+  )
 }
 
 /** 港股:09:30-12:00、13:00-16:00。 */
 export function hkStockSession(h: number, m: number): MarketStatus {
-  if (inSession(h, m, [9, 30], [12, 0])) return 'open'
-  if (inSession(h, m, [13, 0], [16, 0])) return 'open'
-  if (minutes(h, m) >= minutes(12, 0) && minutes(h, m) < minutes(13, 0)) return 'lunch'
-  if (minutes(h, m) < minutes(9, 30)) return 'pre'
-  return 'post'
+  return sessionFromRanges(
+    h,
+    m,
+    [
+      { open: [9, 30], close: [12, 0] },
+      { open: [13, 0], close: [16, 0] },
+    ],
+    { open: [12, 0], close: [13, 0] },
+  )
 }
 
 /** 美股(美东):09:30-16:00,无午休。 */
 export function usStockSession(h: number, m: number): MarketStatus {
-  if (inSession(h, m, [9, 30], [16, 0])) return 'open'
-  if (minutes(h, m) < minutes(9, 30)) return 'pre'
-  return 'post'
+  return sessionFromRanges(
+    h,
+    m,
+    [{ open: [9, 30], close: [16, 0] }],
+    null,
+  )
 }
 
 /** 周末判定(星期 0=周日,6=周六)。 */
