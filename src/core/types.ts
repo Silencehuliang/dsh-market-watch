@@ -32,3 +32,22 @@ export interface ProviderResult<T> {
   delayed: boolean
   asOf: string
 }
+
+/** 基金盘中估值(不是官方净值)。 */
+export interface FundEstimate {
+  code: string
+  name: string
+  /** 最近官方净值日期。 */
+  navDate: string
+  /** 最近官方单位净值。 */
+  nav?: number
+  /** 估值净值(盘中;收盘后无)。 */
+  estimateNav?: number
+  /** 估值涨幅(%)。 */
+  estimatePercent?: number
+  /** 估值时间。 */
+  estimateTime?: string
+  /** 界面必须标注「估值(延迟约2分钟)」。 */
+  isEstimate: true
+  source: string
+}

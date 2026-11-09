@@ -5,6 +5,7 @@ import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
 import { QuoteService } from './core/quote-service.js'
 import { fetchSinaStocks } from './core/providers/sina.js'
+import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol } from './core/symbol.js'
 
 export const name = 'market-watch'
@@ -102,6 +103,42 @@ export function apply(ctx: Context) {
           source: q.source,
           stale: q.stale ?? false,
         }))
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'market_fund_estimate',
+      description:
+        '查询基金盘中估值(估算净值、估算涨幅)。数据来自公开网页接口,可能延迟约2分钟,不构成投资建议。',
+      parameters: {
+        codes: {
+          type: 'array',
+          items: { type: 'string' },
+          required: true,
+          description: '基金代码列表,如 110022',
+        },
+      },
+      output: {
+        schema: { type: 'json' },
+        render: (_args: unknown, value: unknown) => [{ type: 'text', text: JSON.stringify(value) }],
+      },
+      async execute(args: { codes: string[] }) {
+        const estimates = await fetchFundEstimates(args.codes)
+        const result = estimates.map((e) => ({
+          code: e.code,
+          name: e.name,
+          navDate: e.navDate,
+          nav: e.nav,
+          estimateNav: e.estimateNav,
+          estimatePercent: e.estimatePercent,
+          estimateTime: e.estimateTime,
+          isEstimate: e.isEstimate,
+          source: e.source,
+        }))
+        // 去除 undefined 字段(JsonValue 不允许 undefined)
+        return JSON.parse(JSON.stringify(result))
       },
     }),
   )
