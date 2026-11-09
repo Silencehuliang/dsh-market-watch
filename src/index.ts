@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { QuoteService } from './core/quote-service.js'
 import { fetchSinaStocks } from './core/providers/sina.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
-import { normalizeSymbol } from './core/symbol.js'
+import { normalizeSymbol, parseSymbol } from './core/symbol.js'
 
 export const name = 'market-watch'
 export const inject = ['tools', 'storageDomain']
@@ -34,6 +34,20 @@ const marketWatchSpec = defineDomain({
     initial: { intervalMs: 5000, riseColor: 'red' },
   },
 })
+
+function defaultGroup(symbolId: string): string {
+  const { market } = parseSymbol(symbolId as never)
+  if (market === 'cn_sh' || market === 'cn_sz' || market === 'cn_bj') return 'builtin:a_stock'
+  if (market === 'hk') return 'builtin:hk'
+  if (market === 'us') return 'builtin:us'
+  if (market === 'fund') return 'builtin:fund'
+  return 'builtin:other'
+}
+
+/** 序列化去除 undefined 字段(JsonValue 不允许 undefined)。 */
+function toJson(v: unknown): any {
+  return JSON.parse(JSON.stringify(v))
+}
 
 export function apply(ctx: Context) {
   let domain: Domain<typeof marketWatchSpec> | undefined
@@ -139,6 +153,80 @@ export function apply(ctx: Context) {
         }))
         // 去除 undefined 字段(JsonValue 不允许 undefined)
         return JSON.parse(JSON.stringify(result))
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'watchlist_add',
+      description: '添加标的到自选(幂等)。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        symbol: { type: 'string', required: true, description: '标的代码,如 sh600519、110022' },
+        name: { type: 'string', description: '标的名称(可选)' },
+        group: { type: 'string', description: '分组 id(可选,默认按市场归类)' },
+      },
+      output: {
+        schema: { type: 'json' },
+        render: (_a: unknown, v: unknown) => [{ type: 'text', text: JSON.stringify(v) }],
+      },
+      async execute(args: { symbol: string; name?: string; group?: string }) {
+        if (!domain) return toJson({ error: 'storage not ready' })
+        const symbolId = normalizeSymbol(args.symbol)
+        const existing = domain.table('watchlist').get(symbolId)
+        if (existing) return toJson({ symbol: symbolId, added: false })
+        const rec = {
+          symbol: symbolId,
+          name: args.name ?? args.symbol,
+          groupId: args.group ?? defaultGroup(symbolId),
+          pinned: false,
+          order: 0,
+          addedAt: new Date().toISOString(),
+        }
+        await domain.table('watchlist').put(symbolId, rec)
+        return toJson({ symbol: symbolId, added: true })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'watchlist_list',
+      description: '列出自选标的。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        group: { type: 'string', description: '按分组过滤(可选)' },
+      },
+      output: {
+        schema: { type: 'json' },
+        render: (_a: unknown, v: unknown) => [{ type: 'text', text: JSON.stringify(v) }],
+      },
+      async execute(args: { group?: string }) {
+        if (!domain) return []
+        const entries = Array.from(domain.table('watchlist').entries())
+        return entries
+          .map(([, v]) => v)
+          .filter((v) => !args.group || v.groupId === args.group)
+          .sort((a, b) => a.order - b.order)
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'watchlist_remove',
+      description: '从自选删除标的。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        symbol: { type: 'string', required: true, description: '标的代码' },
+      },
+      output: {
+        schema: { type: 'json' },
+        render: (_a: unknown, v: unknown) => [{ type: 'text', text: JSON.stringify(v) }],
+      },
+      async execute(args: { symbol: string }) {
+        if (!domain) return toJson({ error: 'storage not ready' })
+        const symbolId = normalizeSymbol(args.symbol)
+        await domain.table('watchlist').delete(symbolId)
+        return toJson({ symbol: symbolId, removed: true })
       },
     }),
   )
