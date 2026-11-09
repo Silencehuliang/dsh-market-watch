@@ -5,12 +5,35 @@
   "type": "module",
   "license": "MIT",
   "description": "DeepSeek Harness 盯盘插件:自选行情、持仓盈亏、涨跌提醒、定时简报,行情数据同时供 Agent 工具调用。",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=22",
+    "dsh": "0.2.1-rc.3"
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/dsh-storage-domain": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.3"
+  },
   "devDependencies": {
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/dsh-storage-domain": "^0.2.1-rc.3",
+    "@deepseek-ai/dsh-tools": "^0.2.1-rc.3",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "zod": "^4.4.3"
   }
 }

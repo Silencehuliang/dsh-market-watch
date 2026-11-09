@@ -139,7 +139,7 @@
 | --- | --- | --- | --- |
 | A 股、美股、期货盘中行情 | 新浪 `https://hq.sinajs.cn/list=代码1,代码2` | 批量请求用逗号拼接;返回 GB18030 编码,需要转码;请求头需带 `Referer: http://finance.sina.com.cn/`;期货代码加前缀 `nf_`(国内)或 `hf_`(国际);美股前缀在不同文档里出现 `gb_` 与 `usr_` 两种 | 美股前缀【待验证】 |
 | 港股行情与股票搜索 | 腾讯财经 | 用于港股行情与 smartbox 搜索 | 具体地址【待验证】 |
-| 基金盘中估值 | 天天基金 `fundgz.1234567.com.cn/js/{基金代码}.js?rt=时间戳` | JSONP 格式 `jsonpgz(...)`;关键字段:估算净值 `gsz`、估算涨幅 `gszzl`、估值时间 `gztime`;数据约有 2 分钟延迟;接口曾变更导致部分基金无数据 | 字段以实际返回为准 |
+| 基金盘中估值 | 东方财富 `fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?Fcodes={代码}` | 字段:估算净值 `GSZ`、估算涨幅 `GSZZL`、估值时间 `GZTIME`、单位净值 `NAV`、净值日期 `PDATE`;盘中返回估值,收盘后 `GSZ` 为 null;约 2 分钟延迟。天天基金 `fundgz` 已失效(见 verification.md) | 已实测 |
 | 基金排行 | 新浪财经基金排行接口 |  | 【待验证】 |
 | A 股日线(前复权) | 搜狐财经 `q.stock.sohu.com` | 用于个股分析的日 K | 【待验证】 |
 | 港股日线(前复权) | 腾讯 `web.ifzq.gtimg.cn` |  | 【待验证】 |
