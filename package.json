@@ -1,0 +1,16 @@
+{
+  "name": "dsh-plugin-market-watch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "DeepSeek Harness 盯盘插件:自选行情、持仓盈亏、涨跌提醒、定时简报,行情数据同时供 Agent 工具调用。",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}
