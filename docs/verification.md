@@ -46,6 +46,13 @@
 - ⚠️ **domainTable 语义**:`domainTable` 的 schema 是**单条记录**类型(KV 表本身即 Record),不要用 `z.record(...)`,否则 `put(key, value)` 的 value 类型错误。
 - 其余 profile bundle 报错(anysearch/dshmarket)是用户 web profile 已有插件与 dsh 0.2.1 不兼容所致,与本插件无关。
 
+## 7. 本地安装验证(2026-11-09)
+
+- ✅ `dsh plugin --profile web add .` 会把插件以 `link:` 方式写入 profile 的 `package.json` 依赖,并 link 进 profile 的 `node_modules`。
+- ⚠️ **环境坑**:profile bundles 里残留的 `dsh-our-free-model`(link 目标目录已不存在)会阻断 `plugin add` 的 reconcile 阶段(`cannot resolve profile bundle`),需先从 bundles + dependencies 移除(已备份 `*.bak-market-watch`)。
+- ✅ **挂载方式**:market-watch 挂在 profile 的 `cordis.patch.yml`(`insert` 行,与该环境 matt-board/workstation 惯例一致;`patchReload: live` 下改 patch 热生效)。
+- ✅ 验证:`dsh --profile web --dump-config`(不带 --patch)配置树出现 `- id: market-watch / name: dsh-plugin-market-watch`,从 profile 安装解析成功。
+
 ## 6. M0 数据源实测(2026-11-09)
 
 | 数据源 | 地址 | 结果 |

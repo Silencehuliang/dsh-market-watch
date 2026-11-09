@@ -1,3 +1,9 @@
+# dsh-plugin-market-watch bundle: mount the host plugin under its package name.
+#
+# 本地开发(--patch 调试,未安装时)可临时改为绝对路径:
+#   - insert:
+#       - id: market-watch
+#         name: E:/Development/Agents_Project/buddy_project/dsh-market-watch/dist/index.js
 - insert:
     - id: market-watch
-      name: E:/Development/Agents_Project/buddy_project/dsh-market-watch/dist/index.js
+      name: dsh-plugin-market-watch
