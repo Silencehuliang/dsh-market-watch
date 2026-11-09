@@ -7,6 +7,7 @@ import { QuoteService } from './core/quote-service.js'
 import { fetchSinaStocks } from './core/providers/sina.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
+import { evaluatePosition } from './core/portfolio.js'
 
 export const name = 'market-watch'
 export const inject = ['tools', 'storageDomain']
@@ -25,13 +26,25 @@ const marketWatchSpec = defineDomain({
         addedAt: z.string(),
       }),
     ),
+    holdings: domainTable(
+      z.object({
+        shares: z.number().optional(),
+        amount: z.number().optional(),
+        costPrice: z.number().optional(),
+        costNav: z.number().optional(),
+        currency: z.string().optional(),
+        closed: z.boolean().optional(),
+        updatedAt: z.string(),
+      }),
+    ),
   },
   global: {
     schema: z.object({
       intervalMs: z.number(),
       riseColor: z.enum(['red', 'green']),
+      privacy: z.object({ exposeAmounts: z.boolean() }),
     }),
-    initial: { intervalMs: 5000, riseColor: 'red' },
+    initial: { intervalMs: 5000, riseColor: 'red', privacy: { exposeAmounts: false } },
   },
 })
 
@@ -227,6 +240,96 @@ export function apply(ctx: Context) {
         const symbolId = normalizeSymbol(args.symbol)
         await domain.table('watchlist').delete(symbolId)
         return toJson({ symbol: symbolId, removed: true })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'holdings_set',
+      description:
+        '设置持仓:基金份额/金额、股票成本价/数量/是否清仓。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        symbol: { type: 'string', required: true, description: '标的代码' },
+        shares: { type: 'number', description: '份额(基金)/数量(股票)' },
+        amount: { type: 'number', description: '金额(基金)' },
+        costPrice: { type: 'number', description: '成本价(股票)' },
+        costNav: { type: 'number', description: '成本净值(基金)' },
+        closed: { type: 'boolean', description: '是否已清仓' },
+      },
+      output: {
+        schema: { type: 'json' },
+        render: (_a: unknown, v: unknown) => [{ type: 'text', text: JSON.stringify(v) }],
+      },
+      async execute(args: {
+        symbol: string
+        shares?: number
+        amount?: number
+        costPrice?: number
+        costNav?: number
+        closed?: boolean
+      }) {
+        if (!domain) return toJson({ error: 'storage not ready' })
+        const symbolId = normalizeSymbol(args.symbol)
+        const existing = domain.table('holdings').get(symbolId)
+        const rec = {
+          shares: args.shares ?? existing?.shares,
+          amount: args.amount ?? existing?.amount,
+          costPrice: args.costPrice ?? existing?.costPrice,
+          costNav: args.costNav ?? existing?.costNav,
+          closed: args.closed ?? existing?.closed,
+          updatedAt: new Date().toISOString(),
+        }
+        await domain.table('holdings').put(symbolId, rec)
+        return toJson({ symbol: symbolId, saved: true })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'holdings_get',
+      description:
+        '查询持仓与盈亏(受隐私模式限制,默认只返回百分比)。数据来自公开接口,不构成投资建议。',
+      parameters: {},
+      output: {
+        schema: { type: 'json' },
+        render: (_a: unknown, v: unknown) => [{ type: 'text', text: JSON.stringify(v) }],
+      },
+      async execute() {
+        if (!domain) return []
+        const settings = domain.global.get()
+        const expose = settings.privacy.exposeAmounts
+        const entries = Array.from(domain.table('holdings').entries())
+        const symbols = entries.map(([s]) => s as never)
+        const quotes = symbols.length ? await quoteService.getQuotes(symbols) : []
+        const quoteBySymbol = new Map(quotes.map((q) => [q.symbol, q]))
+        return toJson(
+          entries.map(([symbol, h]) => {
+            const quote = quoteBySymbol.get(symbol as never)
+            const r = evaluatePosition(
+              { shares: h.shares ?? 0, costPrice: h.costPrice ?? h.costNav ?? 0, closed: h.closed },
+              { price: quote?.price ?? 0, prevClose: quote?.prevClose ?? 0 },
+            )
+            const base = {
+              symbol,
+              name: quote?.name,
+              profitRate: r.profitRate,
+              isClosed: r.isClosed,
+            }
+            if (!expose) return base
+            return {
+              ...base,
+              shares: h.shares,
+              amount: h.amount,
+              costPrice: h.costPrice,
+              costNav: h.costNav,
+              dayProfit: r.dayProfit,
+              cumProfit: r.cumProfit,
+              marketValue: r.marketValue,
+            }
+          }),
+        )
       },
     }),
   )
