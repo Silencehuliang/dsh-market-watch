@@ -6,12 +6,16 @@
   "license": "MIT",
   "description": "DeepSeek Harness 盯盘插件:自选行情、持仓盈亏、涨跌提醒、定时简报,行情数据同时供 Agent 工具调用。",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "types": "dist/types/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./dist/types/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./client": {
+      "default": "./dist/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "engines": {
@@ -19,9 +23,21 @@
     "dsh": "0.2.1-rc.3"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node build.mjs && tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
@@ -32,6 +48,11 @@
     "@deepseek-ai/cordis": "~4.0.5",
     "@deepseek-ai/dsh-storage-domain": "^0.2.1-rc.3",
     "@deepseek-ai/dsh-tools": "^0.2.1-rc.3",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "esbuild": "^0.25.12",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8",
     "zod": "^4.4.3"

@@ -25,8 +25,9 @@
 ## 3. 与 SRS 的差异记录
 
 1. **`ctx.slots.inject()` 不存在**:SRS §3.3 写的 `ctx.slots.inject(key, cb)` 在 v0.2.1 是 `ctx.slots.register(spec, Component)`;「inject」是 slot 的声明字段。UI 贡献统一走 `register`。
-2. **打包字段**:SRS §3.2 的 `dsh.bundle.patch`(指向 cordis.patch.yml)未在实测包中发现;实际用 `dsh.client.{inject, platform}` + `engines.dsh` 声明版本。
-3. **版本**:SRS 调研桌面版 v0.2,CLI 兼容 `>=0.1.7-rc.1 <0.3.0`;实测 CLI 0.2.1-rc.3,`engines.dsh` 精确声明。
+2. **打包字段**:`dsh.bundle.patch`(指向 cordis.patch.yml)**存在**(经官方 dsh-plugin-template 确认);配合 `dsh.client.{inject, platform}` + `engines.dsh`。
+3. **客户端 bundle 构建约定**(经官方 dsh-plugin-template/build.mjs 确认):用 **esbuild** 双构建——宿主 `esm/node22`(外部化 `@deepseek-ai/*`),客户端 `cjs/browser`(外部化 react 全家 + `@deepseek-ai/*`),再用 **banner/footer 注入** `window.__ModuleLoader__.load({ id, factory: (require) => { var module={exports:{}}; ... return module.exports; } })` 包装。声明文件由 tsc `emitDeclarationOnly` 单独产出。本仓库 `build.mjs` 已复刻此约定,dist/client.js 验证格式正确。
+4. **版本**:SRS 调研桌面版 v0.2,CLI 兼容 `>=0.1.7-rc.1 <0.3.0`;实测 CLI 0.2.1-rc.3,`engines.dsh` 精确声明。
 
 ## 4. cordis.patch.yml 格式
 
