@@ -17,7 +17,7 @@ function makeQuote(symbol: string, price: number): Quote {
 
 let now = 0
 function makeSvc(fetcher: (symbols: string[]) => Promise<Quote[]>) {
-  return new QuoteService(fetcher, { ttlMs: 5000, cooldownMs: 60000, now: () => now })
+  return new QuoteService(fetcher, { cooldownMs: 60000, now: () => now })
 }
 
 describe('QuoteService', () => {
@@ -53,13 +53,13 @@ describe('QuoteService', () => {
     expect(svc.diagnostics().inCooldown).toBe(true)
   })
 
-  it('缓存过期(超过 ttl)→ 标 stale', async () => {
+  it('主源成功但个别 symbol 缺失 → 用缓存兜底并标 stale', async () => {
     const fetcher = vi.fn(async () => [makeQuote('cn_sh:600519', 100)])
     const svc = makeSvc(fetcher)
-    await svc.getQuotes(['cn_sh:600519']) // 成功,写缓存 at=0
-    now = 6000 // 超过 ttl 5000
-    fetcher.mockRejectedValue(new Error('x')) // 失败,返回过期缓存
+    await svc.getQuotes(['cn_sh:600519', 'cn_sz:000001']) // 只有 600519 返回
+    fetcher.mockResolvedValue([]) // 第二次全部缺失
     const quotes = await svc.getQuotes(['cn_sh:600519'])
+    expect(quotes).toHaveLength(1)
     expect(quotes[0]!.stale).toBe(true)
   })
 

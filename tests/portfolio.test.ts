@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  caculateEarnings,
   cumProfit,
   dayProfit,
   evaluatePosition,
@@ -45,16 +44,6 @@ describe('profitRate (TC-PL-05)', () => {
 describe('marketValue', () => {
   it('市值 = 份额 × 现价', () => {
     expect(marketValue(1000, 11)).toBe(11000)
-  })
-})
-
-describe('caculateEarnings (leek-fund 对齐)', () => {
-  it('(money/price)×currentPrice − money', () => {
-    // 本金 10000,成本净值 1.0,现净值 1.2 → 份额 10000,盈亏 = 10000×1.2 − 10000 = 2000
-    expect(caculateEarnings(10000, 1.0, 1.2)).toBeCloseTo(2000)
-  })
-  it('现价为 0 时返回 0', () => {
-    expect(caculateEarnings(10000, 1.0, 0)).toBe(0)
   })
 })
 

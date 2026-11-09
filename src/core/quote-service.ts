@@ -1,8 +1,6 @@
 import type { Quote, SymbolId } from './types.js'
 
 export interface QuoteServiceOptions {
-  /** 缓存有效期(ms),默认 5000(等于轮询间隔)。 */
-  ttlMs: number
   /** 主源失败后的冷却期(ms),默认 60000。 */
   cooldownMs: number
   now: () => number
@@ -19,21 +17,21 @@ export interface QuoteServiceDiagnostics {
  * 主源失败(抛错)时返回缓存并标 stale;冷却期内不再请求主源。
  */
 export class QuoteService {
-  private cache = new Map<SymbolId, { quote: Quote; at: number }>()
+  private cache = new Map<SymbolId, Quote>()
   private cooldownUntil = 0
   private lastError: string | null = null
   private lastSuccessAt = 0
 
   constructor(
     private fetcher: (symbols: SymbolId[]) => Promise<Quote[]>,
-    private opts: QuoteServiceOptions = { ttlMs: 5000, cooldownMs: 60000, now: Date.now },
+    private opts: QuoteServiceOptions = { cooldownMs: 60000, now: Date.now },
   ) {}
 
   async getQuotes(symbols: SymbolId[]): Promise<Quote[]> {
     const now = this.opts.now()
 
     if (now < this.cooldownUntil) {
-      return this.fromCache(symbols, now)
+      return this.fromCache(symbols)
     }
 
     try {
@@ -41,20 +39,20 @@ export class QuoteService {
       const bySymbol = new Map(fresh.map((q) => [q.symbol, q]))
       this.lastSuccessAt = now
       this.lastError = null
-      for (const q of fresh) this.cache.set(q.symbol, { quote: q, at: now })
+      for (const q of fresh) this.cache.set(q.symbol, q)
 
       return symbols
         .map((s) => {
           const f = bySymbol.get(s)
           if (f) return f
           const c = this.cache.get(s)
-          return c ? { ...c.quote, stale: true } : null
+          return c ? { ...c, stale: true } : null
         })
         .filter((q): q is Quote => q !== null)
     } catch (e) {
       this.lastError = e instanceof Error ? e.message : String(e)
       this.cooldownUntil = now + this.opts.cooldownMs
-      return this.fromCache(symbols, now)
+      return this.fromCache(symbols)
     }
   }
 
@@ -66,11 +64,12 @@ export class QuoteService {
     }
   }
 
-  private fromCache(symbols: SymbolId[], _now: number): Quote[] {
+  /** 缓存兜底:一律标 stale(主源失败,无法确认新鲜)。 */
+  private fromCache(symbols: SymbolId[]): Quote[] {
     const out: Quote[] = []
     for (const s of symbols) {
       const c = this.cache.get(s)
-      if (c) out.push({ ...c.quote, stale: true })
+      if (c) out.push({ ...c, stale: true })
     }
     return out
   }

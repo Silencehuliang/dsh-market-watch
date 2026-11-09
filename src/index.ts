@@ -7,7 +7,9 @@ import { QuoteService } from './core/quote-service.js'
 import { fetchSinaStocks } from './core/providers/sina.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
-import { evaluatePosition } from './core/portfolio.js'
+import { evaluatePosition, sharesFromAmount } from './core/portfolio.js'
+import type { PositionResult } from './core/portfolio.js'
+import type { Quote, SymbolId } from './core/types.js'
 
 export const name = 'market-watch'
 export const inject = ['tools', 'storageDomain']
@@ -62,6 +64,18 @@ function toJson(v: unknown): any {
   return JSON.parse(JSON.stringify(v))
 }
 
+/** 统一的 JSON 工具输出定义。 */
+const jsonOutput = {
+  schema: { type: 'json' as const },
+  render: (_a: unknown, v: unknown) => [{ type: 'text' as const, text: JSON.stringify(v) }],
+}
+
+/** 统一的文本工具输出定义。 */
+const textOutput = {
+  schema: { type: 'string' as const },
+  render: (_a: unknown, v: string) => [{ type: 'text' as const, text: v }],
+}
+
 export function apply(ctx: Context) {
   let domain: Domain<typeof marketWatchSpec> | undefined
 
@@ -72,30 +86,51 @@ export function apply(ctx: Context) {
     })
   })
 
-  const quoteService = new QuoteService(fetchSinaStocks)
+  const stockQuotes = new QuoteService(fetchSinaStocks)
+
+  /** 基金估值转 Quote 形态:price = 估值(盘中)或昨日净值(收盘后)。 */
+  const fundQuotes = new QuoteService(async (symbols) => {
+    const codeToSymbol = new Map(symbols.map((s) => [parseSymbol(s).code, s] as const))
+    const estimates = await fetchFundEstimates([...codeToSymbol.keys()])
+    return estimates.map((e) => ({
+      symbol: codeToSymbol.get(e.code)!,
+      name: e.name,
+      price: e.estimateNav ?? e.nav ?? 0,
+      change: 0,
+      changePercent: e.estimatePercent ?? 0,
+      prevClose: e.nav ?? 0,
+      time: e.estimateTime ?? e.navDate,
+      status: 'unknown',
+      source: e.source,
+      delayedSec: 120, // 基金估值延迟约 2 分钟
+    }))
+  })
+
+  /** 按 market 路由:股票走 sina,基金走东财。 */
+  async function getQuotes(symbols: SymbolId[]): Promise<Quote[]> {
+    const stocks = symbols.filter((s) => parseSymbol(s).market !== 'fund')
+    const funds = symbols.filter((s) => parseSymbol(s).market === 'fund')
+    const [stockRes, fundRes] = await Promise.allSettled([
+      stocks.length ? stockQuotes.getQuotes(stocks) : Promise.resolve([] as Quote[]),
+      funds.length ? fundQuotes.getQuotes(funds) : Promise.resolve([] as Quote[]),
+    ])
+    const out: Quote[] = []
+    if (stockRes.status === 'fulfilled') out.push(...stockRes.value)
+    if (fundRes.status === 'fulfilled') out.push(...fundRes.value)
+    return out
+  }
+
+  /** 收盘保持:上次盈亏结果缓存(price≤0 时 evaluatePosition 保持它)。 */
+  const prevResults = new Map<SymbolId, PositionResult>()
 
   ctx.tools.register(
     defineTool({
       name: 'market_watch_hello',
-      description: 'market-watch 自检:验证 storage 读写。数据来自公开接口,不构成投资建议。',
+      description: 'market-watch 插件自检:验证宿主侧可用性。数据来自公开接口,不构成投资建议。',
       parameters: {},
-      output: {
-        schema: { type: 'string' },
-        render: (_args: unknown, value: string) => [{ type: 'text', text: value }],
-      },
+      output: textOutput,
       async execute() {
-        if (!domain) return 'storage not ready'
-        await domain.table('watchlist').put('fund:110022', {
-          symbol: 'fund:110022',
-          name: '示例基金',
-          groupId: 'builtin:fund',
-          pinned: false,
-          order: 0,
-          addedAt: new Date().toISOString(),
-        })
-        const rec = domain.table('watchlist').get('fund:110022')
-        const settings = domain.global.get()
-        return `hello from market-watch; storage ok: ${rec?.name}, intervalMs=${settings.intervalMs}`
+        return 'hello from market-watch'
       },
     }),
   )
@@ -104,7 +139,7 @@ export function apply(ctx: Context) {
     defineTool({
       name: 'market_quote',
       description:
-        '查询 A 股行情,返回现价、涨跌额、涨跌幅等。数据来自公开网页接口,可能延迟,不构成投资建议。',
+        '查询 A 股/港股行情,返回现价、涨跌额、涨跌幅等。数据来自公开网页接口,可能延迟,不构成投资建议。',
       parameters: {
         symbols: {
           type: 'array',
@@ -113,23 +148,23 @@ export function apply(ctx: Context) {
           description: '标的代码列表,如 sh600519、sz000001',
         },
       },
-      output: {
-        schema: { type: 'json' },
-        render: (_args: unknown, value: unknown) => [{ type: 'text', text: JSON.stringify(value) }],
-      },
+      output: jsonOutput,
       async execute(args: { symbols: string[] }) {
         const symbols = args.symbols.map((s) => normalizeSymbol(s))
-        const quotes = await quoteService.getQuotes(symbols)
-        return quotes.map((q) => ({
-          symbol: q.symbol,
-          name: q.name,
-          price: q.price,
-          change: q.change,
-          changePercent: q.changePercent,
-          time: q.time,
-          source: q.source,
-          stale: q.stale ?? false,
-        }))
+        const quotes = await getQuotes(symbols)
+        return toJson(
+          quotes.map((q) => ({
+            symbol: q.symbol,
+            name: q.name,
+            price: q.price,
+            change: q.change,
+            changePercent: q.changePercent,
+            asOf: q.time,
+            delayed: (q.delayedSec ?? 0) > 0 || q.stale === true,
+            source: q.source,
+            stale: q.stale ?? false,
+          })),
+        )
       },
     }),
   )
@@ -147,25 +182,24 @@ export function apply(ctx: Context) {
           description: '基金代码列表,如 110022',
         },
       },
-      output: {
-        schema: { type: 'json' },
-        render: (_args: unknown, value: unknown) => [{ type: 'text', text: JSON.stringify(value) }],
-      },
+      output: jsonOutput,
       async execute(args: { codes: string[] }) {
         const estimates = await fetchFundEstimates(args.codes)
-        const result = estimates.map((e) => ({
-          code: e.code,
-          name: e.name,
-          navDate: e.navDate,
-          nav: e.nav,
-          estimateNav: e.estimateNav,
-          estimatePercent: e.estimatePercent,
-          estimateTime: e.estimateTime,
-          isEstimate: e.isEstimate,
-          source: e.source,
-        }))
-        // 去除 undefined 字段(JsonValue 不允许 undefined)
-        return JSON.parse(JSON.stringify(result))
+        return toJson(
+          estimates.map((e) => ({
+            code: e.code,
+            name: e.name,
+            navDate: e.navDate,
+            nav: e.nav,
+            estimateNav: e.estimateNav,
+            estimatePercent: e.estimatePercent,
+            estimateTime: e.estimateTime,
+            isEstimate: e.isEstimate,
+            asOf: e.estimateTime ?? e.navDate,
+            delayed: true,
+            source: e.source,
+          })),
+        )
       },
     }),
   )
@@ -179,10 +213,7 @@ export function apply(ctx: Context) {
         name: { type: 'string', description: '标的名称(可选)' },
         group: { type: 'string', description: '分组 id(可选,默认按市场归类)' },
       },
-      output: {
-        schema: { type: 'json' },
-        render: (_a: unknown, v: unknown) => [{ type: 'text', text: JSON.stringify(v) }],
-      },
+      output: jsonOutput,
       async execute(args: { symbol: string; name?: string; group?: string }) {
         if (!domain) return toJson({ error: 'storage not ready' })
         const symbolId = normalizeSymbol(args.symbol)
@@ -209,10 +240,7 @@ export function apply(ctx: Context) {
       parameters: {
         group: { type: 'string', description: '按分组过滤(可选)' },
       },
-      output: {
-        schema: { type: 'json' },
-        render: (_a: unknown, v: unknown) => [{ type: 'text', text: JSON.stringify(v) }],
-      },
+      output: jsonOutput,
       async execute(args: { group?: string }) {
         if (!domain) return []
         const entries = Array.from(domain.table('watchlist').entries())
@@ -231,10 +259,7 @@ export function apply(ctx: Context) {
       parameters: {
         symbol: { type: 'string', required: true, description: '标的代码' },
       },
-      output: {
-        schema: { type: 'json' },
-        render: (_a: unknown, v: unknown) => [{ type: 'text', text: JSON.stringify(v) }],
-      },
+      output: jsonOutput,
       async execute(args: { symbol: string }) {
         if (!domain) return toJson({ error: 'storage not ready' })
         const symbolId = normalizeSymbol(args.symbol)
@@ -248,7 +273,7 @@ export function apply(ctx: Context) {
     defineTool({
       name: 'holdings_set',
       description:
-        '设置持仓:基金份额/金额、股票成本价/数量/是否清仓。数据来自公开接口,不构成投资建议。',
+        '设置持仓:基金份额/金额(只有金额时按成本净值反推份额)、股票成本价/数量/是否清仓。数据来自公开接口,不构成投资建议。',
       parameters: {
         symbol: { type: 'string', required: true, description: '标的代码' },
         shares: { type: 'number', description: '份额(基金)/数量(股票)' },
@@ -257,10 +282,7 @@ export function apply(ctx: Context) {
         costNav: { type: 'number', description: '成本净值(基金)' },
         closed: { type: 'boolean', description: '是否已清仓' },
       },
-      output: {
-        schema: { type: 'json' },
-        render: (_a: unknown, v: unknown) => [{ type: 'text', text: JSON.stringify(v) }],
-      },
+      output: jsonOutput,
       async execute(args: {
         symbol: string
         shares?: number
@@ -272,16 +294,23 @@ export function apply(ctx: Context) {
         if (!domain) return toJson({ error: 'storage not ready' })
         const symbolId = normalizeSymbol(args.symbol)
         const existing = domain.table('holdings').get(symbolId)
+        const costNav = args.costNav ?? existing?.costNav
+        let shares = args.shares ?? existing?.shares
+        // 基金只有金额时,按成本净值反推份额(附录 B)
+        const isFund = parseSymbol(symbolId).market === 'fund'
+        if (isFund && shares == null && args.amount != null && costNav != null && costNav > 0) {
+          shares = sharesFromAmount(args.amount, costNav)
+        }
         const rec = {
-          shares: args.shares ?? existing?.shares,
+          shares,
           amount: args.amount ?? existing?.amount,
           costPrice: args.costPrice ?? existing?.costPrice,
-          costNav: args.costNav ?? existing?.costNav,
+          costNav,
           closed: args.closed ?? existing?.closed,
           updatedAt: new Date().toISOString(),
         }
         await domain.table('holdings').put(symbolId, rec)
-        return toJson({ symbol: symbolId, saved: true })
+        return toJson({ symbol: symbolId, saved: true, shares })
       },
     }),
   )
@@ -292,25 +321,25 @@ export function apply(ctx: Context) {
       description:
         '查询持仓与盈亏(受隐私模式限制,默认只返回百分比)。数据来自公开接口,不构成投资建议。',
       parameters: {},
-      output: {
-        schema: { type: 'json' },
-        render: (_a: unknown, v: unknown) => [{ type: 'text', text: JSON.stringify(v) }],
-      },
+      output: jsonOutput,
       async execute() {
         if (!domain) return []
         const settings = domain.global.get()
         const expose = settings.privacy.exposeAmounts
         const entries = Array.from(domain.table('holdings').entries())
         const symbols = entries.map(([s]) => s as never)
-        const quotes = symbols.length ? await quoteService.getQuotes(symbols) : []
+        const quotes = symbols.length ? await getQuotes(symbols) : []
         const quoteBySymbol = new Map(quotes.map((q) => [q.symbol, q]))
         return toJson(
           entries.map(([symbol, h]) => {
             const quote = quoteBySymbol.get(symbol as never)
+            const hasPrice = (quote?.price ?? 0) > 0
             const r = evaluatePosition(
               { shares: h.shares ?? 0, costPrice: h.costPrice ?? h.costNav ?? 0, closed: h.closed },
               { price: quote?.price ?? 0, prevClose: quote?.prevClose ?? 0 },
+              prevResults.get(symbol as never),
             )
+            if (hasPrice) prevResults.set(symbol as never, r)
             const base = {
               symbol,
               name: quote?.name,

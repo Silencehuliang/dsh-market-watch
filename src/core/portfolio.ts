@@ -28,12 +28,6 @@ export function profitRate(price: number, costPrice: number): number {
   return ((price - costPrice) / costPrice) * 100
 }
 
-/** 对齐 leek-fund 的 caculateEarnings:盈亏 = (money/price)×currentPrice − money,即份额×(现价−成本)。 */
-export function caculateEarnings(money: number, price: number, currentPrice: number): number {
-  if (currentPrice <= 0 || price <= 0) return 0
-  return (money / price) * currentPrice - money
-}
-
 export interface Position {
   shares: number
   costPrice: number
