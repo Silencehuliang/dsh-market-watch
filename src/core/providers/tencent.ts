@@ -4,6 +4,7 @@
  * [30]时间 [31]涨跌额 [32]涨跌幅 [33]最高 [34]最低;币种美股在 [35]、港股在 [75]。
  */
 import type { Currency, Quote, SymbolId } from '../types.js'
+import { fetchGb18030, parseNum as parseNumShared } from './http.js'
 
 export function toTencentCodes(symbols: SymbolId[]): string {
   return symbols
@@ -15,7 +16,7 @@ export function toTencentCodes(symbols: SymbolId[]): string {
     .join(',')
 }
 
-const parseNum = (v: string | undefined): number => (v ? Number(v) || 0 : 0)
+const parseNum = parseNumShared
 
 /** 解析单条腾讯行情(港股/美股同构)。 */
 export function parseTencentQuote(symbol: SymbolId, raw: string): Quote | null {
@@ -63,11 +64,7 @@ export function parseTencentBatch(symbols: SymbolId[], raw: string): Quote[] {
 /** 请求腾讯行情(宿主侧网络,GB18030 解码)。失败抛错,由 QuoteService 兜底。 */
 export async function fetchTencentQuotes(symbols: SymbolId[]): Promise<Quote[]> {
   const codes = toTencentCodes(symbols)
-  const res = await fetch(`https://qt.gtimg.cn/q=${codes}`, {
-    signal: AbortSignal.timeout(8000),
-  })
-  if (!res.ok) throw new Error(`tencent http ${res.status}`)
-  const text = new TextDecoder('gb18030').decode(await res.arrayBuffer())
+  const text = await fetchGb18030(`https://qt.gtimg.cn/q=${codes}`)
   if (text.includes('pv_none_match')) throw new Error('tencent returned none_match')
   return parseTencentBatch(symbols, text)
 }

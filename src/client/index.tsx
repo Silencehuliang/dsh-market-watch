@@ -9,6 +9,26 @@ import { useCallback, useEffect, useState } from 'react'
 import { MARKET_REMOTE } from './remote.js'
 import { NS, en, zh } from './locales.js'
 
+/** 轮询 hook(M3 review:MiniBar/MarketBody 同构轮询收敛;不可见暂停,恢复即刷)。 */
+function usePolling(fn: () => void | Promise<void>, intervalMs: number) {
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | undefined
+    const run = () => {
+      if (typeof document !== 'undefined' && document.hidden) return // FR-UI-07:不可见暂停
+      void fn()
+    }
+    run()
+    timer = setInterval(run, intervalMs)
+    const vis = () => run()
+    document.addEventListener('visibilitychange', vis)
+    return () => {
+      if (timer) clearInterval(timer)
+      document.removeEventListener('visibilitychange', vis)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fn, intervalMs])
+}
+
 export const inject = ['slots', 'remote', 'locale', 'sidebarRightTabs', 'sidebarRight']
 
 const MARKET_ID = 'dsh-plugin-market-watch'
@@ -66,28 +86,20 @@ function MiniBar(props: any) {
         alertsUnread: q.settings?.alertsUnread ?? 0,
       })
     } catch {
-      /* 静默:迷你条不打扰 */
+    /* 静默:迷你条不打扰 */
     }
-  }, [props.fetchQuotes, props.fetchHoldings])
+    }, [props.fetchQuotes, props.fetchHoldings])
 
-  useEffect(() => {
-    void reload()
-    const t = setInterval(() => void reload(), 10000)
-    const vis = () => void reload()
-    document.addEventListener('visibilitychange', vis)
-    return () => {
-      clearInterval(t)
-      document.removeEventListener('visibilitychange', vis)
-    }
-  }, [reload])
+    usePolling(reload, 10000)
 
-  const open = () => {
+    const open = () => {
     try {
-      props.open?.()
+    props.ackAlerts?.() // 查看即清未读(审查修复:alertsUnread 只增不清)
+    props.open?.()
     } catch {
-      /* 无会话时 openTab 静默失败(见 verification.md §10) */
+    /* 无会话时 openTab 静默失败(见 verification.md §10) */
     }
-  }
+    }
 
   const pill: React.CSSProperties = {
     display: 'inline-flex',
@@ -262,16 +274,7 @@ function MarketBody(props: any) {
   }, [props.fetchQuotes])
 
   const intervalMs = settings?.intervalMs ?? 5000
-  useEffect(() => {
-    void reload()
-    const t2 = setInterval(() => void reload(), intervalMs)
-    const vis = () => void reload() // 恢复可见时立即刷新
-    document.addEventListener('visibilitychange', vis)
-    return () => {
-      clearInterval(t2)
-      document.removeEventListener('visibilitychange', vis)
-    }
-  }, [reload, intervalMs])
+  usePolling(reload, intervalMs)
 
   const doSearch = useCallback(
     async (q: string) => {
@@ -766,7 +769,13 @@ export function apply(ctx: any): void {
             name: 'shell.overlay',
             id: MARKET_ID,
             order: 10,
-            inject: () => ({ fetchQuotes, fetchHoldings, t, open: () => ctx.sidebarRight.openTab(MARKET_KIND) }),
+            inject: () => ({
+              fetchQuotes,
+              fetchHoldings,
+              t,
+              ackAlerts: () => call('ackAlerts'),
+              open: () => ctx.sidebarRight.openTab(MARKET_KIND),
+            }),
           },
           (props: any) => <MiniBar {...props} />,
         ),

@@ -146,7 +146,20 @@ export function apply(ctx: Context) {
     }))
   })
 
-  /** 按 market 路由:A股走 sina、港股/美股走腾讯、基金走东财。休市市场不发网络请求(FR-DATA-07),用缓存收盘价;无缓存的标的强制取一次。 */
+  /** market → service 路由表(单一真相,M3 review:消除 8 处重复)。 */
+  const quoteRoutes: ReadonlyArray<{ markets: readonly string[]; service: QuoteService }> = [
+    { markets: ['cn_sh', 'cn_sz', 'cn_bj'], service: stockQuotes },
+    { markets: ['hk', 'us'], service: overseasQuotes },
+    { markets: ['fut_cn', 'fut_gl', 'fx'], service: futuresFxQuotes },
+    { markets: ['fund'], service: fundQuotes },
+  ]
+
+  const serviceFor = (symbol: SymbolId): QuoteService => {
+    const market = parseSymbol(symbol).market
+    return quoteRoutes.find((r) => r.markets.includes(market))!.service
+  }
+
+  /** 按路由表分发。休市市场不发网络请求(FR-DATA-07),用缓存收盘价;无缓存的标的强制取一次。 */
   async function getQuotes(symbols: SymbolId[]): Promise<Quote[]> {
     const now = new Date()
     const open: SymbolId[] = []
@@ -154,29 +167,21 @@ export function apply(ctx: Context) {
     for (const s of symbols) {
       ;(isMarketOpenNow(parseSymbol(s).market, now) ? open : closed).push(s)
     }
-    const closedCached = [
-      ...stockQuotes.peekCached(closed.filter((s) => ['cn_sh', 'cn_sz', 'cn_bj'].includes(parseSymbol(s).market))),
-      ...overseasQuotes.peekCached(closed.filter((s) => ['hk', 'us'].includes(parseSymbol(s).market))),
-      ...futuresFxQuotes.peekCached(closed.filter((s) => ['fut_cn', 'fut_gl', 'fx'].includes(parseSymbol(s).market))),
-      ...fundQuotes.peekCached(closed.filter((s) => parseSymbol(s).market === 'fund')),
-    ]
+    const closedCached = quoteRoutes.flatMap((r) =>
+      r.service.peekCached(closed.filter((s) => r.markets.includes(parseSymbol(s).market))),
+    )
     const cachedIds = new Set(closedCached.map((q) => q.symbol))
     const fetchSymbols = [...open, ...closed.filter((s) => !cachedIds.has(s))]
-    const cnStocks = fetchSymbols.filter((s) => ['cn_sh', 'cn_sz', 'cn_bj'].includes(parseSymbol(s).market))
-    const overseas = fetchSymbols.filter((s) => ['hk', 'us'].includes(parseSymbol(s).market))
-    const futuresFx = fetchSymbols.filter((s) => ['fut_cn', 'fut_gl', 'fx'].includes(parseSymbol(s).market))
-    const funds = fetchSymbols.filter((s) => parseSymbol(s).market === 'fund')
-    const [stockRes, overseasRes, futuresFxRes, fundRes] = await Promise.allSettled([
-      cnStocks.length ? stockQuotes.getQuotes(cnStocks) : Promise.resolve([] as Quote[]),
-      overseas.length ? overseasQuotes.getQuotes(overseas) : Promise.resolve([] as Quote[]),
-      futuresFx.length ? futuresFxQuotes.getQuotes(futuresFx) : Promise.resolve([] as Quote[]),
-      funds.length ? fundQuotes.getQuotes(funds) : Promise.resolve([] as Quote[]),
-    ])
+    const results = await Promise.allSettled(
+      quoteRoutes.map((r) => {
+        const batch = fetchSymbols.filter((s) => r.markets.includes(parseSymbol(s).market))
+        return batch.length ? r.service.getQuotes(batch) : Promise.resolve([] as Quote[])
+      }),
+    )
     const out: Quote[] = [...closedCached]
-    if (stockRes.status === 'fulfilled') out.push(...stockRes.value)
-    if (overseasRes.status === 'fulfilled') out.push(...overseasRes.value)
-    if (futuresFxRes.status === 'fulfilled') out.push(...futuresFxRes.value)
-    if (fundRes.status === 'fulfilled') out.push(...fundRes.value)
+    for (const r of results) {
+      if (r.status === 'fulfilled') out.push(...r.value)
+    }
     // 由交易日历填充 status(FR-DATA-07):open/closed/pre/post
     return out.map((q) => ({ ...q, status: marketStatus(parseSymbol(q.symbol).market, now) }))
   }
@@ -300,7 +305,13 @@ export function apply(ctx: Context) {
         const rate = currency !== 'CNY' ? (rates?.[currency] ?? null) : null
         // FR-WL-06:外币持仓折算人民币(rate 缺失时降级为原币值并标注)
         const toCny = (v: number) => (rate !== null ? v * rate : v)
-        const base = { symbol, name: quote?.name, profitRate: r.profitRate, isClosed: r.isClosed }
+        const base = {
+          symbol,
+          name: quote?.name,
+          profitRate: r.profitRate,
+          isClosed: r.isClosed,
+          ...(currency !== 'CNY' && rate === null ? { fxMissing: true } : {}), // 汇率缺失降级标注(审查修复)
+        }
         if (!expose) return base
         return {
           ...base,
@@ -489,7 +500,7 @@ export function apply(ctx: Context) {
     defineTool({
       name: 'market_quote',
       description:
-        '查询 A 股/港股行情,返回现价、涨跌额、涨跌幅等。数据来自公开网页接口,可能延迟,不构成投资建议。',
+        '查询行情,返回现价、涨跌额、涨跌幅等:A股、港股、美股、期货(国内/国际)、外汇。数据来自公开网页接口,可能延迟,不构成投资建议。',
       parameters: {
         symbols: {
           type: 'array',
@@ -693,6 +704,18 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(
     defineTool({
+      name: 'alert_ack',
+      description: '清除提醒未读计数(用户查看后调用)。数据来自公开接口,不构成投资建议。',
+      parameters: {},
+      output: jsonOutput,
+      async execute() {
+        return toJson({ acked: await setGlobal({ alertsUnread: 0 }) })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
       name: 'brief_generate',
       description:
         '生成盘前/盘后简报的结构化数据(休市日返回 closed=true 与「休市」)。由模型整理成文,不构成投资建议。',
@@ -792,12 +815,14 @@ export function apply(ctx: Context) {
         const symbolId = normalizeSymbol(args.symbol)
         const bars = await fetchKline(symbolId, rangeToDays(args.range ?? '1m'))
         if (args.format === 'csv') {
-          return {
-            type: 'text' as const,
-            text: `date,open,close,high,low,volume\n${bars
+          // csv 作为 JSON 字段返回(审查修复:output 声明为 json,裸 text 会被 render 二次包装)
+          return toJson({
+            symbol: symbolId,
+            format: 'csv',
+            csv: `date,open,close,high,low,volume\n${bars
               .map((b) => `${b.date},${b.open},${b.close},${b.high},${b.low},${b.volume}`)
               .join('\n')}`,
-          }
+          })
         }
         return toJson({ symbol: symbolId, bars })
       },
@@ -881,7 +906,11 @@ export function apply(ctx: Context) {
         const open = view.items.filter((i) => !i.isClosed)
         const dayTotal = open.reduce((s, i) => s + (i.dayProfit ?? 0), 0)
         const cumTotal = open.reduce((s, i) => s + (i.cumProfit ?? 0), 0)
-        const costTotal = open.reduce((s, i) => s + (i.costPrice ?? i.costNav ?? 0) * (i.shares ?? 0), 0)
+        // 成本同样按汇率折算(审查修复:外币持仓的 totalRate 此前用原币成本除以已折 CNY 盈亏,计算错误)
+        const costTotal = open.reduce(
+          (s, i) => s + (i.costPrice ?? i.costNav ?? 0) * (i.shares ?? 0) * (i.fxRate ?? 1),
+          0,
+        )
         const up = open.filter((i) => i.profitRate > 0).length
         const down = open.filter((i) => i.profitRate < 0).length
         const maxSwing = open

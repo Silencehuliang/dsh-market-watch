@@ -5,10 +5,9 @@
  * - 外汇 fx_:[0]时间 [1]现价 [3]昨收 [10]涨跌幅% [11]涨跌额(实测数学自洽验证)
  */
 import type { Quote, SymbolId } from '../types.js'
+import { fetchGb18030, parseNum } from './http.js'
 
 const csv = (raw: string): string[] => raw.replace(/^var\s+hq_str_\w+="|";?\s*$/g, '').split(',')
-
-const parseNum = (v: string | undefined): number => (v ? Number(v) || 0 : 0)
 
 /** 国内期货(nf_):昨收 = 昨结算价。 */
 export function parseCnFuturesQuote(symbol: SymbolId, raw: string): Quote | null {
@@ -96,12 +95,9 @@ export async function fetchFuturesFxQuotes(symbols: SymbolId[]): Promise<Quote[]
     .filter((x) => x.kind !== null)
   if (codes.length === 0) return []
   const list = codes.map((x) => x.raw).join(',')
-  const res = await fetch(`https://hq.sinajs.cn/list=${list}`, {
-    headers: { Referer: 'http://finance.sina.com.cn/' },
-    signal: AbortSignal.timeout(8000),
+  const text = await fetchGb18030(`https://hq.sinajs.cn/list=${list}`, {
+    referer: 'http://finance.sina.com.cn/',
   })
-  if (!res.ok) throw new Error(`sina futures http ${res.status}`)
-  const text = new TextDecoder('gb18030').decode(await res.arrayBuffer())
   const byRaw = new Map<string, string>()
   for (const line of text.split(';')) {
     const eq = line.indexOf('=')
@@ -125,12 +121,9 @@ export async function fetchFuturesFxQuotes(symbols: SymbolId[]): Promise<Quote[]
 
 /** 汇率(FR-WL-06 外币折算):USD→CNY、HKD→CNY(新浪 fx_,[1]=现价)。 */
 export async function fetchFxRates(): Promise<{ USD: number; HKD: number }> {
-  const res = await fetch('https://hq.sinajs.cn/list=fx_susdcny,fx_shkdcny', {
-    headers: { Referer: 'http://finance.sina.com.cn/' },
-    signal: AbortSignal.timeout(8000),
+  const text = await fetchGb18030('https://hq.sinajs.cn/list=fx_susdcny,fx_shkdcny', {
+    referer: 'http://finance.sina.com.cn/',
   })
-  if (!res.ok) throw new Error(`sina fx http ${res.status}`)
-  const text = new TextDecoder('gb18030').decode(await res.arrayBuffer())
   const parseFx = (raw: string | undefined): number => {
     if (!raw) throw new Error('fx rate missing')
     const f = csv(raw)
