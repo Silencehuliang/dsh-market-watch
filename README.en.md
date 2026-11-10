@@ -90,8 +90,6 @@ dsh --profile web --patch ./cordis.patch.yml   # local load
 
 Docs: `docs/spec.md`, SRS, `docs/architecture.md`, `docs/adr/`, `docs/verification.md`, `GLOSSARY.md`.
 
-P&L formulas reference [leek-fund](https://github.com/Leek-Fund/leek-fund) (BSD-3-Clause).
-
 ## License
 
 MIT

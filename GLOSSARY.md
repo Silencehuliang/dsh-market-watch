@@ -1,6 +1,6 @@
 # dsh-market-watch
 
-把 VSCode 插件「韭菜盒子」(leek-fund)的盯盘能力做成 DeepSeek Harness(dsh)插件,并利用 dsh 的 Agent 能力做出差异化。本术语表是领域概念的单一来源,与 SRS 第 2 章一致。
+面向 DeepSeek Harness(dsh)的盯盘插件:自选行情常驻、持仓盈亏、涨跌提醒、定时简报,并利用 dsh 的 Agent 能力做出差异化。本术语表是领域概念的单一来源,与 SRS 第 2 章一致。
 
 ## Language
 

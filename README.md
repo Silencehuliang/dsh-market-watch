@@ -3,7 +3,7 @@
 **DeepSeek Harness(dsh)的 Agent 增强型盯盘插件** —— 自选行情常驻侧栏、持仓盈亏账本、涨跌提醒、每日定时简报;同一份数据以 23 个 Agent 工具的形式暴露给模型。
 
 > 定位一句话:**不做最重的 UI,做最懂 Agent 什么时候该说话的那一个。**
-> 与 VSCode「韭菜盒子」(leek-fund)对照:它靠常驻面板让人盯盘;这里靠 Agent 主动性让模型替你先看一遍——每日自动简报覆盖整个自选/持仓组合,快讯自动关联你的自选标的,而面板本身保持克制。
+> 差异化来自 Agent 主动性:每日自动简报覆盖整个自选/持仓组合,快讯自动关联你的自选标的,而面板本身保持克制——模型替你先看一遍,而不是你让 Agent 看。
 
 [English](./README.en.md) · 更新日志见 [CHANGELOG.md](./CHANGELOG.md)
 
@@ -191,8 +191,6 @@ dsh --profile web --patch ./cordis.patch.yml
 | `docs/adr/` | 架构决策记录(可靠性模型、隐私边界) |
 | `docs/verification.md` | 实机验证记录(M0–M4) |
 | `GLOSSARY.md` | 术语表 |
-
-盈亏计算公式参考 [leek-fund](https://github.com/Leek-Fund/leek-fund)(BSD-3-Clause)。
 
 ## License
 
