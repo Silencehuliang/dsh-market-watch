@@ -40,6 +40,7 @@ await build({
     'react/jsx-runtime',
     'react/jsx-dev-runtime',
     'scheduler',
+    'zod',
   ],
   banner: {
     js: "window.__ModuleLoader__.load({ id: 'dsh-plugin-market-watch', factory: (require) => { var module = { exports: {} }; var exports = module.exports;",
