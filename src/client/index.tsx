@@ -106,7 +106,7 @@ export function apply(ctx: any): void {
     throw result.error
   }
 
-  // 阶段一:注册 tab 类型
+  // 阶段一:注册 tab 类型 + 侧栏引导页入口盒(点击即打开 tab)
   ctx.effect(
     () =>
       ctx.sidebarRightTabs.register({
@@ -114,6 +114,14 @@ export function apply(ctx: any): void {
         kind: MARKET_KIND,
         priority: 'extension',
         title: () => '行情',
+        guide: [
+          {
+            id: 'market-guide-entry',
+            order: 50,
+            title: () => '行情',
+            description: () => '自选行情、持仓盈亏与涨跌提醒',
+          },
+        ],
       }),
     'market-watch: tab definition',
   )
