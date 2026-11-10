@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { QuoteService } from './core/quote-service.js'
 import { fetchSinaStocks } from './core/providers/sina.js'
 import { fetchTencentQuotes } from './core/providers/tencent.js'
+import { fetchFuturesFxQuotes } from './core/providers/futures-fx.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
 import { isMarketOpenNow, marketStatus } from './core/calendar.js'
@@ -109,6 +110,8 @@ export function apply(ctx: Context) {
   const stockQuotes = new QuoteService(fetchSinaStocks)
   /** 港股/美股(腾讯,T21)。 */
   const overseasQuotes = new QuoteService(fetchTencentQuotes)
+  /** 期货/外汇(新浪,T22)。 */
+  const futuresFxQuotes = new QuoteService(fetchFuturesFxQuotes)
 
   /** 基金估值转 Quote 形态:price = 估值(盘中)或昨日净值(收盘后)。 */
   const fundQuotes = new QuoteService(async (symbols) => {
@@ -139,21 +142,25 @@ export function apply(ctx: Context) {
     const closedCached = [
       ...stockQuotes.peekCached(closed.filter((s) => ['cn_sh', 'cn_sz', 'cn_bj'].includes(parseSymbol(s).market))),
       ...overseasQuotes.peekCached(closed.filter((s) => ['hk', 'us'].includes(parseSymbol(s).market))),
+      ...futuresFxQuotes.peekCached(closed.filter((s) => ['fut_cn', 'fut_gl', 'fx'].includes(parseSymbol(s).market))),
       ...fundQuotes.peekCached(closed.filter((s) => parseSymbol(s).market === 'fund')),
     ]
     const cachedIds = new Set(closedCached.map((q) => q.symbol))
     const fetchSymbols = [...open, ...closed.filter((s) => !cachedIds.has(s))]
     const cnStocks = fetchSymbols.filter((s) => ['cn_sh', 'cn_sz', 'cn_bj'].includes(parseSymbol(s).market))
     const overseas = fetchSymbols.filter((s) => ['hk', 'us'].includes(parseSymbol(s).market))
+    const futuresFx = fetchSymbols.filter((s) => ['fut_cn', 'fut_gl', 'fx'].includes(parseSymbol(s).market))
     const funds = fetchSymbols.filter((s) => parseSymbol(s).market === 'fund')
-    const [stockRes, overseasRes, fundRes] = await Promise.allSettled([
+    const [stockRes, overseasRes, futuresFxRes, fundRes] = await Promise.allSettled([
       cnStocks.length ? stockQuotes.getQuotes(cnStocks) : Promise.resolve([] as Quote[]),
       overseas.length ? overseasQuotes.getQuotes(overseas) : Promise.resolve([] as Quote[]),
+      futuresFx.length ? futuresFxQuotes.getQuotes(futuresFx) : Promise.resolve([] as Quote[]),
       funds.length ? fundQuotes.getQuotes(funds) : Promise.resolve([] as Quote[]),
     ])
     const out: Quote[] = [...closedCached]
     if (stockRes.status === 'fulfilled') out.push(...stockRes.value)
     if (overseasRes.status === 'fulfilled') out.push(...overseasRes.value)
+    if (futuresFxRes.status === 'fulfilled') out.push(...futuresFxRes.value)
     if (fundRes.status === 'fulfilled') out.push(...fundRes.value)
     // 由交易日历填充 status(FR-DATA-07):open/closed/pre/post
     return out.map((q) => ({ ...q, status: marketStatus(parseSymbol(q.symbol).market, now) }))
