@@ -8,6 +8,7 @@ import { fetchSinaStocks } from './core/providers/sina.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
 import { marketStatus } from './core/calendar.js'
+import { searchSymbols } from './core/search.js'
 // 轮询/UI 刷新用 isMarketOpenNow 判断(FR-DATA-07:节假日不发起高频轮询)
 import { evaluatePosition, sharesFromAmount } from './core/portfolio.js'
 import type { PositionResult } from './core/portfolio.js'
@@ -198,10 +199,44 @@ export function apply(ctx: Context) {
     }
   }
 
+  // ---------- 自选增删核心(T14:工具与 Remote 共用) ----------
+
+  async function addToWatchlistCore(
+    symbolRaw: string,
+    name?: string,
+  ): Promise<{ ok: boolean; symbol: string }> {
+    if (!domain) return { ok: false, symbol: symbolRaw }
+    const symbolId = normalizeSymbol(symbolRaw)
+    const existing = domain.table('watchlist').get(symbolId)
+    if (!existing) {
+      await domain.table('watchlist').put(symbolId, {
+        symbol: symbolId,
+        name: name ?? symbolRaw,
+        groupId: defaultGroup(symbolId),
+        pinned: false,
+        order: 0,
+        addedAt: new Date().toISOString(),
+      })
+    }
+    return { ok: true, symbol: symbolId }
+  }
+
+  async function removeFromWatchlistCore(
+    symbolRaw: string,
+  ): Promise<{ ok: boolean; symbol: string }> {
+    if (!domain) return { ok: false, symbol: symbolRaw }
+    const symbolId = normalizeSymbol(symbolRaw)
+    await domain.table('watchlist').delete(symbolId)
+    return { ok: true, symbol: symbolId }
+  }
+
   const dataAccess: MarketWatchDataAccess = {
     getWatchlistWithQuotes,
     getHoldingsView: computeHoldingsView,
     getSettingsView,
+    searchSymbols: async (query) => ({ items: await searchSymbols(query) }),
+    addToWatchlist: (symbol, name) => addToWatchlistCore(symbol, name),
+    removeFromWatchlist: (symbol) => removeFromWatchlistCore(symbol),
   }
   new MarketWatchRuntime(ctx, dataAccess)
   ctx.effect(() => {
@@ -290,6 +325,26 @@ export function apply(ctx: Context) {
             source: e.source,
           })),
         )
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'market_search',
+      description:
+        '按名称或代码搜索标的(股票/场内基金/指数/场外基金),返回候选列表。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        query: {
+          type: 'string',
+          required: true,
+          description: '名称或代码关键词,如「茅台」「腾讯」「110022」',
+        },
+      },
+      output: jsonOutput,
+      async execute(args: { query: string }) {
+        const items = await searchSymbols(args.query)
+        return toJson({ items })
       },
     }),
   )

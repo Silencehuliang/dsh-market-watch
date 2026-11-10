@@ -27,10 +27,14 @@ export class SymbolError extends Error {
   }
 }
 
-/** 各数据源代码 → 统一 SymbolId。非法输入抛出 SymbolError。 */
+/** 各数据源代码 → 统一 SymbolId。非法输入抛出 SymbolError。对已是 SymbolId 的输入幂等。 */
 export function normalizeSymbol(input: string): SymbolId {
   const raw = input.trim()
   if (!raw) throw new SymbolError(input, 'empty symbol')
+
+  // 幂等:输入已是 SymbolId 形式(市场段合法)则原样返回——Remote/存储层的 key 都是这个形态
+  const idForm = raw.match(/^(cn_sh|cn_sz|cn_bj|hk|us|fund|fut_cn|fut_gl|fx):(.+)$/)
+  if (idForm) return `${idForm[1]}:${idForm[2]}` as SymbolId
 
   // A 股三所:sh/sz/bj + 6 位数字
   const aShare = raw.match(/^(sh|sz|bj)(\d{6})$/i)

@@ -1,0 +1,116 @@
+- generic [ref=f1e4]:
+  - generic [ref=f1e7]:
+    - generic [ref=f1e8]:
+      - button "新建会话" [ref=f1e9] [cursor=pointer]
+      - button "收起侧边栏" [ref=f1e38] [cursor=pointer]
+    - button "新建会话" [ref=f1e41] [cursor=pointer]:
+      - generic [ref=f1e42]: 新会话
+      - generic [aria-hidden]:
+        - generic:
+          - generic: Ctrl
+          - generic: +
+          - generic: Alt
+          - generic: +
+          - generic: "N"
+    - navigation "全局面板" [ref=f1e47]:
+      - button "插件" [ref=f1e48] [cursor=pointer]
+      - button "自动化任务" [ref=f1e57] [cursor=pointer]
+      - button "更多" [ref=f1e65] [cursor=pointer]
+    - generic [ref=f1e75]:
+      - generic [ref=f1e76]:
+        - generic [ref=f1e77]: 工作区
+        - generic [ref=f1e79]:
+          - button "搜索会话" [ref=f1e80] [cursor=pointer]
+          - textbox "搜索会话名称"
+        - generic [ref=f1e84]:
+          - button "视图选项" [ref=f1e86] [cursor=pointer]
+          - button "添加工作区" [ref=f1e90] [cursor=pointer]
+      - tree "会话" [ref=f1e95]:
+        - generic [ref=f1e96]:
+          - treeitem "warp-masque-actions" [expanded] [ref=f1e98] [cursor=pointer]
+          - treeitem "新会话" [selected] [ref=f1e295] [cursor=pointer]
+          - treeitem "https://github.com/Silencehuliang/warp-m 15天" [ref=f1e299] [cursor=pointer]:
+            - generic [ref=f1e301]: https://github.com/Silencehuliang/warp-m
+            - generic [ref=f1e302]: 15天
+          - treeitem "https://github.com/Silencehuliang/warp-m 15天" [ref=f1e304] [cursor=pointer]:
+            - generic [ref=f1e306]: https://github.com/Silencehuliang/warp-m
+            - generic [ref=f1e307]: 15天
+          - treeitem "https://github.com/Silencehuliang/warp-m 15天" [ref=f1e309] [cursor=pointer]:
+            - generic [ref=f1e311]: https://github.com/Silencehuliang/warp-m
+            - generic [ref=f1e312]: 15天
+        - treeitem "bilibili_work" [ref=f1e108] [cursor=pointer]
+        - treeitem "my_blog" [ref=f1e116] [cursor=pointer]
+        - treeitem "buddy_account_switch" [ref=f1e124] [cursor=pointer]
+        - treeitem "gj" [ref=f1e132] [cursor=pointer]
+        - treeitem "Developer Workbench" [ref=f1e140] [cursor=pointer]
+        - treeitem "workbuddy2api-panel" [ref=f1e148] [cursor=pointer]
+        - treeitem "WorkStation" [ref=f1e156] [cursor=pointer]
+        - treeitem "Goal Dashboard" [ref=f1e164] [cursor=pointer]
+        - treeitem "CFNext" [ref=f1e172] [cursor=pointer]
+        - treeitem "workflows" [ref=f1e180] [cursor=pointer]
+        - treeitem "gj" [ref=f1e188] [cursor=pointer]
+        - treeitem "gj-codex" [ref=f1e196] [cursor=pointer]
+        - treeitem "work_station_zcode" [ref=f1e204] [cursor=pointer]
+        - treeitem "work_station_dsh" [ref=f1e212] [cursor=pointer]
+        - treeitem "dsh-cj" [ref=f1e220] [cursor=pointer]
+        - treeitem "gj-dsh" [ref=f1e228] [cursor=pointer]
+        - treeitem "test4" [ref=f1e236] [cursor=pointer]
+        - treeitem "未分组" [ref=f1e314] [cursor=pointer]
+    - button "账号菜单" [ref=f1e249] [cursor=pointer]:
+      - generic [ref=f1e254]: 更多
+  - generic [ref=f1e258]:
+    - banner [ref=f1e321]
+    - generic [ref=f1e264]:
+      - generic [ref=f1e272]:
+        - generic [ref=f1e273]: 探索未至之境
+        - generic [ref=f1e274]: 预览版
+      - generic [ref=f1e275]:
+        - button "选择工作区" [ref=f1e276] [cursor=pointer]:
+          - generic [ref=f1e279]: warp-masque-actions
+        - button "标准模式" [ref=f1e330] [cursor=pointer]
+      - generic [ref=f1e284]:
+        - textbox "描述你想要构建的内容, / 调用指令, @ 文件或对话" [ref=f1e339]:
+          - paragraph [ref=f1e340]: 平安银行
+        - generic [ref=f1e288]:
+          - generic [ref=f1e289]:
+            - button "添加文件或调用指令" [ref=f1e341] [cursor=pointer]
+            - button "访问模式，当前：工作区内修改" [ref=f1e346] [cursor=pointer]
+          - generic [ref=f1e290]:
+            - button "sensenova-6.8-flash-lite" [ref=f1e358] [cursor=pointer]
+            - button "发送消息" [ref=f1e364] [cursor=pointer]
+  - generic [ref=f1e371]:
+    - tablist [ref=f1e373]:
+      - tab "行情 关闭" [selected] [ref=f1e374] [cursor=pointer]:
+        - generic [ref=f1e375]: 行情
+        - button "关闭" [ref=f1e379]
+      - button "新标签页" [ref=f1e383] [cursor=pointer]
+      - button "分栏" [ref=f1e386] [cursor=pointer]
+      - generic [ref=f1e389]:
+        - button "全屏" [ref=f1e390] [cursor=pointer]
+        - button "收起右侧边栏" [ref=f1e393] [cursor=pointer]
+    - generic [ref=f1e399]:
+      - generic [ref=f1e400]:
+        - generic [ref=f1e401]: 自选
+        - button "收起" [ref=f1e413] [cursor=pointer]
+      - generic [ref=f1e414]:
+        - textbox "搜索代码或名称,如「茅台」「腾讯」「110022」" [active] [ref=f1e415]: 平安银行
+        - generic [ref=f1e416]:
+          - generic [ref=f1e417]:
+            - generic [ref=f1e418]: 平安银行
+            - generic [ref=f1e419]: cn_sz:000001 · 股票
+          - button "添加" [ref=f1e420] [cursor=pointer]
+        - generic [ref=f1e421]:
+          - generic [ref=f1e422]:
+            - generic [ref=f1e423]: 平安银行
+            - generic [ref=f1e424]: fund:000001 · 基金
+          - button "添加" [ref=f1e425] [cursor=pointer]
+      - generic [ref=f1e403]:
+        - generic [ref=f1e404]:
+          - generic [ref=f1e405]: 贵州茅台
+          - generic [ref=f1e406]: cn_sh:600519
+        - generic [ref=f1e407]:
+          - generic [ref=f1e408]:
+            - generic [ref=f1e409]: "1440.51"
+            - generic [ref=f1e410]: "-0.31%"
+          - button "✕" [ref=f1e411] [cursor=pointer]
+  - generic "dsh-plugin-market-watch 已加载" [ref=f1e292]: 📈 market-watch

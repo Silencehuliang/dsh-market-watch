@@ -57,6 +57,26 @@ export type WatchlistResult = z.infer<typeof watchlistResultSchema>
 export type HoldingsResult = z.infer<typeof holdingsResultSchema>
 export type SettingsResult = z.infer<typeof settingsResultSchema>
 
+export const searchResultSchema = z
+  .object({
+    items: z
+      .array(
+        z.object({
+          symbol: z.string(),
+          name: z.string(),
+          market: z.string(),
+          type: z.string(),
+        }),
+      )
+      .readonly(),
+  })
+  .readonly()
+
+export const opResultSchema = z.object({ ok: z.boolean(), symbol: z.string() }).readonly()
+
+export type SearchResult = z.infer<typeof searchResultSchema>
+export type OpResult = z.infer<typeof opResultSchema>
+
 // ---------- codec helpers(本地辅助,对齐官方模板)----------
 
 const json = (name: string, wire: string, typeSymbol: string, schema: z.ZodType) => ({
@@ -101,5 +121,38 @@ export const MARKET_WATCH_INVOCATIONS: readonly InvocationDescriptor[] = [
     invocation: { kind: 'direct' },
     parameters: [],
     result: resultOf(`${PKG}#SettingsResult`, settingsResultSchema),
+  },
+  {
+    id: `${PKG}#market-watch/search`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'search',
+    invocation: { kind: 'direct' },
+    parameters: [json('query', 'query', `${PKG}#SearchQuery`, z.string())],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#SearchResult`, searchResultSchema),
+  },
+  {
+    id: `${PKG}#market-watch/addToWatchlist`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'addToWatchlist',
+    invocation: { kind: 'direct' },
+    parameters: [
+      json('symbol', 'symbol', `${PKG}#AddSymbol`, z.string()),
+      json('name', 'name', `${PKG}#AddName`, z.string().optional()),
+    ],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#OpResult`, opResultSchema),
+  },
+  {
+    id: `${PKG}#market-watch/removeFromWatchlist`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'removeFromWatchlist',
+    invocation: { kind: 'direct' },
+    parameters: [json('symbol', 'symbol', `${PKG}#RemoveSymbol`, z.string())],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#OpResult`, opResultSchema),
   },
 ]

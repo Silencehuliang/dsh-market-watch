@@ -24,6 +24,14 @@ function makeData(overrides: Partial<MarketWatchDataAccess> = {}): MarketWatchDa
       items: [{ symbol: 'fund:110022', profitRate: 2.5, isClosed: false }],
     }),
     getSettingsView: () => ({ intervalMs: 5000, riseColor: 'red', privacy: { exposeAmounts: false } }),
+    searchSymbols: async () => ({
+      items: [
+        { symbol: 'cn_sh:600519', name: '贵州茅台', market: 'cn_sh', type: 'stock' },
+        { symbol: 'fund:009265', name: '易方达消费精选股票', market: 'fund', type: 'fund' },
+      ],
+    }),
+    addToWatchlist: async () => ({ ok: true, symbol: 'cn_sh:600519' }),
+    removeFromWatchlist: async () => ({ ok: true, symbol: 'cn_sh:600519' }),
     ...overrides,
   }
 }
@@ -73,6 +81,21 @@ describe('MarketWatchRuntime', () => {
     const result = await svc.getSettings()
     expect(result.settings.intervalMs).toBe(5000)
     expect(result.settings.privacy.exposeAmounts).toBe(false)
+  })
+
+  it('search 返回经 schema 校验的候选', async () => {
+    const svc = new MarketWatchRuntime(new Context(), makeData())
+    const result = await svc.search('茅台')
+    expect(result.items).toHaveLength(2)
+    expect(result.items[0]!.symbol).toBe('cn_sh:600519')
+  })
+
+  it('addToWatchlist / removeFromWatchlist 返回操作结果', async () => {
+    const svc = new MarketWatchRuntime(new Context(), makeData())
+    const added = await svc.addToWatchlist('sz000001', '平安银行')
+    expect(added.ok).toBe(true)
+    const removed = await svc.removeFromWatchlist('sz000001')
+    expect(removed.ok).toBe(true)
   })
 
   it('schema 不匹配的数据被 parse 拒绝', async () => {

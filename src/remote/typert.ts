@@ -32,6 +32,22 @@ export const TYPERT_MANIFEST: TypertContribution = {
             name: 'getSettings',
             signature: 'getSettings(): Promise<SettingsResult>',
           },
+          {
+            kind: 'method',
+            name: 'search',
+            signature: 'search(query: string, signal?: AbortSignal): Promise<SearchResult>',
+          },
+          {
+            kind: 'method',
+            name: 'addToWatchlist',
+            signature:
+              'addToWatchlist(symbol: string, name?: string, signal?: AbortSignal): Promise<OpResult>',
+          },
+          {
+            kind: 'method',
+            name: 'removeFromWatchlist',
+            signature: 'removeFromWatchlist(symbol: string, signal?: AbortSignal): Promise<OpResult>',
+          },
         ],
         types: [],
       },

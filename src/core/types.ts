@@ -33,6 +33,15 @@ export interface ProviderResult<T> {
   asOf: string
 }
 
+/** 搜索候选(FR-WL-02:代码/名称/市场/类型)。 */
+export interface SearchResultItem {
+  symbol: string
+  name: string
+  market: string
+  /** stock / index / fund / other。 */
+  type: string
+}
+
 /** 基金盘中估值(不是官方净值)。 */
 export interface FundEstimate {
   code: string

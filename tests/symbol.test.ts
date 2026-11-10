@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { SymbolError, normalizeSymbol, parseSymbol, toProviderCode } from '../src/core/symbol'
 
+describe('normalizeSymbol 幂等(FR-DATA-01)', () => {
+  it('已是 SymbolId 形式 → 原样返回', () => {
+    expect(normalizeSymbol('cn_sh:600519')).toBe('cn_sh:600519')
+    expect(normalizeSymbol('fund:009265')).toBe('fund:009265')
+    expect(normalizeSymbol('hk:00700')).toBe('hk:00700')
+    expect(normalizeSymbol('us:TCEHY')).toBe('us:TCEHY')
+    expect(normalizeSymbol('fut_gl:OIL')).toBe('fut_gl:OIL')
+  })
+  it('未知市场前缀仍拒绝', () => {
+    expect(() => normalizeSymbol('xx:123')).toThrow()
+  })
+})
+
 describe('normalizeSymbol', () => {
   it.each([
     ['sh600519', 'cn_sh:600519'],
