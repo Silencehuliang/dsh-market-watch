@@ -89,6 +89,20 @@
 - **修复方式**:node 全程 UTF-8 读源文件,经 `execSync(…, { input: JSON.stringify({title, body}) })` 把 payload 走 stdin 传给 `gh api -X PATCH --input -`。修复脚本 `.scratch/fix-titles.mjs`。
 - **预防**:凡经 CLI 传中文,一律用 `--body-file`/`--input`(UTF-8 文件)+ node 调用,不要在 PowerShell 5.1 里内联中文字符串。
 
+## 13. M3 数据源实测(2026-11-10)
+
+| 数据源 | 地址 | 结果 |
+| --- | --- | --- |
+| 美股-腾讯 | `qt.gtimg.cn/q=usAAPL`(`v_` 前缀,`~` 分隔) | ✅ 现价/昨收/开盘/成交量/时间/涨跌幅/**币种 USD** 字段齐全 |
+| 美股-新浪 | `hq.sinajs.cn/list=gb_aapl`(需 Referer) | ✅ 备用源,逗号分隔,含 52 周高低 |
+| 期货国内-新浪 | `nf_IF0` | ✅ 开/高/低/现价/成交量/持仓量 |
+| 期货国际-新浪 | `hf_OIL` | ✅ 现价/买卖价/高低/时间/昨收/日期 |
+| 外汇-新浪 | `fx_susdcny` | ✅ 时间/买卖价/昨收/涨跌额/涨跌幅/日期 |
+| 汇率 | `fx_susdcny`(USDCNY 6.6705)、`fx_shkdcny`(HKDCNY 0.8505) | ✅ FR-WL-06 外币折算源确定 |
+
+- 编码:均 GB18030(与 A 股一致);美股腾讯字段自带币种(`USD`),汇率字段无名称乱码问题(数字为主)。
+- 终端显示的「乱码」是 console 代码页问题,GBK 解码后中文字段(名称)正确——fixture 测试为准。
+
 ## 6. M0 数据源实测(2026-11-09)
 
 | 数据源 | 地址 | 结果 |
