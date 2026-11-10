@@ -12,6 +12,7 @@ import { normalizeSymbol, parseSymbol } from './core/symbol.js'
 import { isMarketOpenNow, marketStatus } from './core/calendar.js'
 import { searchSymbols } from './core/search.js'
 import { evaluatePosition, sharesFromAmount } from './core/portfolio.js'
+import { evaluateRule } from './core/alerts.js'
 import { BUILTIN_GROUPS, groupForMarket, sortWatchItems } from './core/watchlist-sort.js'
 import type { PositionResult } from './core/portfolio.js'
 import type { Quote, SymbolId } from './core/types.js'
@@ -54,6 +55,18 @@ const marketWatchSpec = defineDomain({
         order: z.number(),
       }),
     ),
+    alerts: domainTable(
+      z.object({
+        symbol: z.string(),
+        kind: z.enum(['price', 'changePercent']),
+        direction: z.enum(['up', 'down']),
+        threshold: z.number(),
+        enabled: z.boolean(),
+        lastTriggeredAt: z.number().optional(),
+        lastTriggerInfo: z.string().optional(),
+        createdAt: z.string(),
+      }),
+    ),
   },
   global: {
     schema: z.object({
@@ -63,6 +76,7 @@ const marketWatchSpec = defineDomain({
       // default 保证 v1 存量 global(无 sortMode)通过 v2 校验(FR-CFG-03)
       sortMode: z.enum(['default', 'asc', 'desc']).default('default'),
       alertsEnabled: z.boolean().default(true),
+      alertsUnread: z.number().default(0),
       miniBarSymbols: z.array(z.string()).default([]),
     }),
     initial: {
@@ -168,6 +182,64 @@ export function apply(ctx: Context) {
 
   /** 收盘保持:上次盈亏结果缓存(price≤0 时 evaluatePosition 保持它)。 */
   const prevResults = new Map<SymbolId, PositionResult>()
+
+  // ---------- 提醒评估引擎(T24:宿主定时器,FR-ALERT-02/03/05) ----------
+
+  /** 上一次的监控值(穿越判定用;重启后首拍跳过)。 */
+  const prevAlertValues = new Map<string, number>()
+
+  async function evaluateAlerts(): Promise<void> {
+    if (!domain) return
+    const settings = domain.global.get()
+    if (!settings.alertsEnabled) return
+    const rules = Array.from(domain.table('alerts').entries()).filter(([, r]) => r.enabled)
+    if (rules.length === 0) return
+    const symbols = [...new Set(rules.map(([, r]) => r.symbol))] as never[]
+    const quotes = await getQuotes(symbols)
+    const bySymbol = new Map(quotes.map((q) => [q.symbol, q]))
+    const now = Date.now()
+    for (const [id, rule] of rules) {
+      const q = bySymbol.get(rule.symbol as never)
+      // FR-ALERT-02:仅在开市时评估(status 由交易日历填充)
+      if (!q || q.status !== 'open') continue
+      const current = rule.kind === 'price' ? q.price : q.changePercent
+      const prev = prevAlertValues.get(id)
+      prevAlertValues.set(id, current)
+      if (prev === undefined) continue // 首拍只有基线,无从穿越
+      const fired = evaluateRule(
+        {
+          id,
+          kind: rule.kind,
+          direction: rule.direction,
+          threshold: rule.threshold,
+          enabled: rule.enabled,
+          lastTriggeredAt: rule.lastTriggeredAt,
+        },
+        prev,
+        current,
+        { now, throttleMs: 180_000, marketOpen: true }, // FR-ALERT-03 节流
+      )
+      if (fired) {
+        const info = `${rule.symbol} ${rule.kind === 'price' ? '价格' : '涨跌幅'}${rule.direction === 'up' ? '上穿' : '下穿'} ${rule.threshold},当前 ${current.toFixed(2)}`
+        await domain.table('alerts').update(id as never, (r) => ({
+          ...r,
+          lastTriggeredAt: now,
+          lastTriggerInfo: info,
+        }))
+        await setGlobal({
+          alertsUnread:
+            ((domain.global.get() as unknown as { alertsUnread?: number }).alertsUnread ?? 0) + 1,
+        })
+        console.log(`[market-watch] alert fired: ${info}`)
+      }
+    }
+  }
+
+  ctx.effect(() => {
+    // FR-ALERT-05:禁止用 dsh schedule 做轮询——宿主定时器驱动
+    const timer = setInterval(() => void evaluateAlerts().catch(() => {}), 5000)
+    return () => clearInterval(timer)
+  }, 'market-watch: alert engine')
 
   // ---------- Remote 数据组装(T11:供浏览器侧经 Remote 网关消费) ----------
 
@@ -546,6 +618,69 @@ export function apply(ctx: Context) {
         if (!domain) return toJson({ error: 'storage not ready' })
         const r = await removeFromWatchlistCore(args.symbol)
         return toJson({ symbol: r.symbol, removed: r.ok })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'alert_set',
+      description:
+        '设置涨跌提醒规则(价格或涨跌幅上穿/下穿阈值,3 分钟节流,仅开市评估)。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        symbol: { type: 'string', required: true, description: '标的代码' },
+        kind: { type: 'string', required: true, description: 'price 或 changePercent' },
+        direction: { type: 'string', required: true, description: 'up(上穿)或 down(下穿)' },
+        threshold: { type: 'number', required: true, description: '阈值' },
+      },
+      output: jsonOutput,
+      async execute(args: {
+        symbol: string
+        kind: 'price' | 'changePercent'
+        direction: 'up' | 'down'
+        threshold: number
+      }) {
+        if (!domain) return toJson({ error: 'storage not ready' })
+        const symbolId = normalizeSymbol(args.symbol)
+        const id = `${symbolId}|${args.kind}|${args.direction}`
+        await domain.table('alerts').put(id, {
+          symbol: symbolId,
+          kind: args.kind,
+          direction: args.direction,
+          threshold: args.threshold,
+          enabled: true,
+          createdAt: new Date().toISOString(),
+        })
+        return toJson({ id, saved: true })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'alert_list',
+      description: '列出全部提醒规则(含最近触发信息)。数据来自公开接口,不构成投资建议。',
+      parameters: {},
+      output: jsonOutput,
+      async execute() {
+        if (!domain) return []
+        return Array.from(domain.table('alerts').entries()).map(([id, r]) => ({ id, ...r }))
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'alert_delete',
+      description: '删除提醒规则。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        id: { type: 'string', required: true, description: '规则 id(alert_list 返回)' },
+      },
+      output: jsonOutput,
+      async execute(args: { id: string }) {
+        if (!domain) return toJson({ error: 'storage not ready' })
+        await domain.table('alerts').delete(args.id as never)
+        return toJson({ id: args.id, deleted: true })
       },
     }),
   )

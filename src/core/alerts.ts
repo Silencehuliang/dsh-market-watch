@@ -2,7 +2,7 @@
  * 提醒穿越判定与节流(纯函数,零依赖)。
  */
 
-export type AlertKind = 'price' | 'percent'
+export type AlertKind = 'price' | 'changePercent'
 export type AlertDirection = 'up' | 'down'
 
 export interface AlertRule {

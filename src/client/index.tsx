@@ -36,6 +36,7 @@ function MiniBar(props: any) {
     items: any[]
     totalRate: number | null
     riseColor: string
+    alertsUnread: number
   } | null>(null)
 
   const reload = useCallback(async () => {
@@ -44,7 +45,7 @@ function MiniBar(props: any) {
       const q = (await props.fetchQuotes()) as {
         items: any[]
         riseColor?: string
-        settings?: { miniBarSymbols?: string[] }
+        settings?: { miniBarSymbols?: string[]; alertsUnread?: number }
       }
       const h = (await props.fetchHoldings()) as { items: any[] }
       const holdingItems = h.items.filter((i) => !i.isClosed)
@@ -62,6 +63,7 @@ function MiniBar(props: any) {
         items: chosen,
         totalRate: holdingItems.length > 0 && totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : null,
         riseColor: q.riseColor ?? 'red',
+        alertsUnread: q.settings?.alertsUnread ?? 0,
       })
     } catch {
       /* 静默:迷你条不打扰 */
@@ -109,6 +111,11 @@ function MiniBar(props: any) {
   return (
     <div style={pill} onClick={open} title={props.t('mini.open')}>
       <span>📈</span>
+      {data.alertsUnread > 0 && (
+        <span title="有提醒触发,详见对话中 alert_list" style={{ color: RED, fontWeight: 600 }}>
+          🔔{data.alertsUnread}
+        </span>
+      )}
       {data.items.length === 0 ? (
         <span style={{ opacity: 0.7 }}>{props.t('mini.none')}</span>
       ) : (
