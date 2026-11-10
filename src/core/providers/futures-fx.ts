@@ -122,3 +122,24 @@ export async function fetchFuturesFxQuotes(symbols: SymbolId[]): Promise<Quote[]
   }
   return out
 }
+
+/** 汇率(FR-WL-06 外币折算):USD→CNY、HKD→CNY(新浪 fx_,[1]=现价)。 */
+export async function fetchFxRates(): Promise<{ USD: number; HKD: number }> {
+  const res = await fetch('https://hq.sinajs.cn/list=fx_susdcny,fx_shkdcny', {
+    headers: { Referer: 'http://finance.sina.com.cn/' },
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!res.ok) throw new Error(`sina fx http ${res.status}`)
+  const text = new TextDecoder('gb18030').decode(await res.arrayBuffer())
+  const parseFx = (raw: string | undefined): number => {
+    if (!raw) throw new Error('fx rate missing')
+    const f = csv(raw)
+    const price = parseNum(f[1])
+    if (price <= 0) throw new Error('fx rate invalid')
+    return price
+  }
+  const usdcny = text.match(/fx_susdcny="([^"]+)"/)
+  const hkdcny = text.match(/fx_shkdcny="([^"]+)"/)
+  if (!usdcny || !hkdcny) throw new Error('fx rates missing')
+  return { USD: parseFx(usdcny[1]), HKD: parseFx(hkdcny[1]) }
+}

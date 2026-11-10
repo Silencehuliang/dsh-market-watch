@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { QuoteService } from './core/quote-service.js'
 import { fetchSinaStocks } from './core/providers/sina.js'
 import { fetchTencentQuotes } from './core/providers/tencent.js'
-import { fetchFuturesFxQuotes } from './core/providers/futures-fx.js'
+import { fetchFuturesFxQuotes, fetchFxRates } from './core/providers/futures-fx.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
 import { isMarketOpenNow, marketStatus } from './core/calendar.js'
@@ -189,6 +189,20 @@ export function apply(ctx: Context) {
       sortMode: 'default' | 'asc' | 'desc'
     }
 
+  /** 汇率缓存(T23:5 分钟,失败降级用上次值/无汇率)。 */
+  let fxCache: { rates: { USD: number; HKD: number }; at: number } | null = null
+  async function getFxRates(): Promise<{ USD: number; HKD: number } | null> {
+    const now = Date.now()
+    if (fxCache && now - fxCache.at < 5 * 60_000) return fxCache.rates
+    try {
+      const rates = await fetchFxRates()
+      fxCache = { rates, at: now }
+      return rates
+    } catch {
+      return fxCache?.rates ?? null // 失败降级:用旧值或无
+    }
+  }
+
   async function computeHoldingsView(): Promise<unknown> {
     if (!domain) return { items: [] }
     const settings = domain.global.get()
@@ -197,6 +211,8 @@ export function apply(ctx: Context) {
     const symbols = entries.map(([s]) => s as never)
     const quotes = symbols.length ? await getQuotes(symbols) : []
     const quoteBySymbol = new Map(quotes.map((q) => [q.symbol, q]))
+    const needFx = quotes.some((q) => q.currency && q.currency !== 'CNY')
+    const rates = needFx ? await getFxRates() : null
     return {
       items: entries.map(([symbol, h]) => {
         const quote = quoteBySymbol.get(symbol as never)
@@ -207,17 +223,23 @@ export function apply(ctx: Context) {
           prevResults.get(symbol as never),
         )
         if (hasPrice) prevResults.set(symbol as never, r)
+        const currency = quote?.currency ?? 'CNY'
+        const rate = currency !== 'CNY' ? (rates?.[currency] ?? null) : null
+        // FR-WL-06:外币持仓折算人民币(rate 缺失时降级为原币值并标注)
+        const toCny = (v: number) => (rate !== null ? v * rate : v)
         const base = { symbol, name: quote?.name, profitRate: r.profitRate, isClosed: r.isClosed }
         if (!expose) return base
         return {
           ...base,
+          currency,
+          fxRate: rate ?? undefined,
           shares: h.shares,
           amount: h.amount,
           costPrice: h.costPrice,
           costNav: h.costNav,
-          dayProfit: r.dayProfit,
-          cumProfit: r.cumProfit,
-          marketValue: r.marketValue,
+          dayProfit: toCny(r.dayProfit),
+          cumProfit: toCny(r.cumProfit),
+          marketValue: toCny(r.marketValue),
         }
       }),
     }
