@@ -935,12 +935,15 @@ export function apply(ctx: Context) {
         if (!domain) return toJson({ error: 'storage not ready' })
         const view = (await computeHoldingsView()) as { items: any[] }
         const open = view.items.filter((i) => !i.isClosed)
+        // XML 转义(审查修复:名称含 <>& 时破坏 SVG 标记)
+        const esc = (s: string) =>
+          s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         const rows = open
           .slice()
           .sort((a, b) => b.profitRate - a.profitRate)
           .map(
             (i, idx) =>
-              `<text x="20" y="${60 + idx * 26}" font-size="14" fill="${i.profitRate >= 0 ? '#E5484D' : '#12B76A'}">${i.name}  ${i.profitRate >= 0 ? '+' : ''}${i.profitRate.toFixed(2)}%</text>`,
+              `<text x="20" y="${60 + idx * 26}" font-size="14" fill="${i.profitRate >= 0 ? '#E5484D' : '#12B76A'}">${esc(i.name)}  ${i.profitRate >= 0 ? '+' : ''}${i.profitRate.toFixed(2)}%</text>`,
           )
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="${80 + rows.length * 26}" viewBox="0 0 360 ${80 + rows.length * 26}"><rect width="100%" height="100%" rx="12" fill="#1a1a2e"/><text x="20" y="34" font-size="16" fill="#fff">📈 盯盘助手 · 收益榜</text>${rows.join('')}</svg>`
         return toJson({ format: 'svg', svg })
