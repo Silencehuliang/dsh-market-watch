@@ -11,7 +11,7 @@ import { fetchFundHistory, fetchKline, rangeToDays } from './core/providers/klin
 import { fetchFundRank, fetchHsgFlow, fetchNewsFlash, fetchSectorFlow } from './core/providers/m4.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
-import { isMarketOpenNow, isTradingDay, marketStatus } from './core/calendar.js'
+import { isMarketOpenNow, isTradingDay, marketStatus, nextMarketOpen } from './core/calendar.js'
 import { searchSymbols } from './core/search.js'
 import { evaluatePosition, sharesFromAmount } from './core/portfolio.js'
 import { evaluateRule } from './core/alerts.js'
@@ -150,11 +150,11 @@ export function apply(ctx: Context) {
   })
 
   /** market → service 路由表(单一真相,M3 review:消除 8 处重复)。 */
-  const quoteRoutes: ReadonlyArray<{ markets: readonly string[]; service: QuoteService }> = [
-    { markets: ['cn_sh', 'cn_sz', 'cn_bj'], service: stockQuotes },
-    { markets: ['hk', 'us'], service: overseasQuotes },
-    { markets: ['fut_cn', 'fut_gl', 'fx'], service: futuresFxQuotes },
-    { markets: ['fund'], service: fundQuotes },
+  const quoteRoutes: ReadonlyArray<{ markets: readonly string[]; service: QuoteService; source: string }> = [
+    { markets: ['cn_sh', 'cn_sz', 'cn_bj'], service: stockQuotes, source: 'sina' },
+    { markets: ['hk', 'us'], service: overseasQuotes, source: 'tencent' },
+    { markets: ['fut_cn', 'fut_gl', 'fx'], service: futuresFxQuotes, source: 'sina' },
+    { markets: ['fund'], service: fundQuotes, source: 'eastmoney' },
   ]
 
   const serviceFor = (symbol: SymbolId): QuoteService => {
@@ -924,6 +924,61 @@ export function apply(ctx: Context) {
       async execute(args: { sort?: string; limit?: number }) {
         const sort = args.sort === 'year' ? 'year' : 'day'
         return toJson({ sort, items: await fetchFundRank(sort, args.limit ?? 10) })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'market_status',
+      description:
+        '查询各市场开收盘状态与下次开盘时间:cn_sh/cn_sz/cn_bj/hk/us/fund/fut_cn/fut_gl/fx。fut_gl/fx 为全天交易。数据来自内置交易日历,不构成投资建议。',
+      parameters: {
+        markets: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '要查询的市场列表(可选,默认全部)',
+        },
+      },
+      output: jsonOutput,
+      async execute(args: { markets?: string[] }) {
+        const now = new Date()
+        const ALL = ['cn_sh', 'cn_sz', 'cn_bj', 'hk', 'us', 'fund', 'fut_cn', 'fut_gl', 'fx']
+        const markets = args.markets?.length ? args.markets : ALL
+        return toJson({
+          generatedAt: now.toISOString(),
+          items: markets.map((m) => {
+            const status = marketStatus(m, now)
+            return { market: m, status, isOpen: status === 'open', nextOpenAt: nextMarketOpen(m, now) }
+          }),
+        })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'market_diagnostics',
+      description:
+        '数据源健康诊断(FR-DATA-08):各行情源最近错误、最近成功时间、最近/平均请求延迟、是否处于失败冷却期。用于排查代理或接口问题。',
+      parameters: {},
+      output: jsonOutput,
+      async execute() {
+        return toJson({
+          generatedAt: new Date().toISOString(),
+          sources: quoteRoutes.map((r) => {
+            const d = r.service.diagnostics()
+            return {
+              source: r.source,
+              markets: r.markets,
+              lastError: d.lastError,
+              lastSuccessAt: d.lastSuccessAt > 0 ? new Date(d.lastSuccessAt).toISOString() : null,
+              lastLatencyMs: d.lastLatencyMs,
+              avgLatencyMs: d.avgLatencyMs,
+              inCooldown: d.inCooldown,
+            }
+          }),
+        })
       },
     }),
   )

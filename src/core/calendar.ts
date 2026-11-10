@@ -247,3 +247,56 @@ export function marketStatus(
   if (session === 'pre') return 'pre'
   return 'closed' // lunch 与 post 都按「已收盘」呈现
 }
+
+/** 某时区在某 UTC 时刻的偏移(ms,东正西负)。 */
+function zonedOffsetMs(tz: string, utcMs: number): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+  const p: Record<string, string> = {}
+  for (const part of dtf.formatToParts(utcMs)) p[part.type] = part.value
+  const asUtc = Date.UTC(
+    Number(p.year),
+    Number(p.month) - 1,
+    Number(p.day),
+    Number(p.hour) % 24,
+    Number(p.minute),
+    Number(p.second),
+  )
+  return asUtc - utcMs
+}
+
+/**
+ * 下次开盘时间(ISO UTC;FR-DATA-06/工具 market_status 依赖)。
+ * 24h 市场(fut_gl/fx)返回 null;跳过周末与节假日,开盘取当地 09:30(各市场一致)。
+ */
+export function nextMarketOpen(
+  market: string,
+  utc: Date,
+  table: readonly string[] = CN_HOLIDAYS_2026,
+): string | null {
+  const tz = marketTimeZone(market)
+  if (!tz) return null
+  for (let i = 0; i < 15; i++) {
+    const day = new Date(utc.getTime() + i * 86_400_000)
+    const { dow, dateKey } = marketLocalParts(tz, day)
+    if (isWeekend(dow) || table.includes(dateKey)) continue
+    if (i === 0) {
+      const { hour, minute } = marketLocalParts(tz, utc)
+      if (hour * 60 + minute >= 9 * 60 + 30) continue // 今日开盘已过,找下一交易日
+    }
+    // 当地 09:30 → UTC:迭代求 utcMs 使 tz 墙钟恰为 09:30(两轮收敛,覆盖 DST 边界)
+    const wallAsUtc = Date.parse(`${dateKey}T09:30:00Z`)
+    let ts = wallAsUtc
+    for (let k = 0; k < 2; k++) ts = wallAsUtc - zonedOffsetMs(tz, ts)
+    return new Date(ts).toISOString()
+  }
+  return null
+}

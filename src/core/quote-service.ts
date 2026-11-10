@@ -10,6 +10,10 @@ export interface QuoteServiceDiagnostics {
   lastError: string | null
   lastSuccessAt: number
   inCooldown: boolean
+  /** 最近一次成功请求的耗时(ms);从未成功为 null。 */
+  lastLatencyMs: number | null
+  /** 成功请求的平均耗时(ms);从未成功为 null。 */
+  avgLatencyMs: number | null
 }
 
 /**
@@ -21,6 +25,9 @@ export class QuoteService {
   private cooldownUntil = 0
   private lastError: string | null = null
   private lastSuccessAt = 0
+  private lastLatencyMs: number | null = null
+  private totalLatencyMs = 0
+  private successCount = 0
 
   constructor(
     private fetcher: (symbols: SymbolId[]) => Promise<Quote[]>,
@@ -35,7 +42,12 @@ export class QuoteService {
     }
 
     try {
+      const t0 = this.opts.now()
       const fresh = await this.fetcher(symbols)
+      const latency = this.opts.now() - t0
+      this.lastLatencyMs = latency
+      this.totalLatencyMs += latency
+      this.successCount += 1
       const bySymbol = new Map(fresh.map((q) => [q.symbol, q]))
       this.lastSuccessAt = now
       this.lastError = null
@@ -61,6 +73,8 @@ export class QuoteService {
       lastError: this.lastError,
       lastSuccessAt: this.lastSuccessAt,
       inCooldown: this.opts.now() < this.cooldownUntil,
+      lastLatencyMs: this.lastLatencyMs,
+      avgLatencyMs: this.successCount > 0 ? this.totalLatencyMs / this.successCount : null,
     }
   }
 

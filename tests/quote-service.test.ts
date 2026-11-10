@@ -69,4 +69,26 @@ describe('QuoteService', () => {
     const quotes = await svc.getQuotes(['cn_sh:600519'])
     expect(quotes).toHaveLength(0)
   })
+
+  it('诊断:从未成功 → 延迟为 null', async () => {
+    const fetcher = vi.fn(async () => { throw new Error('x') })
+    const svc = makeSvc(fetcher)
+    await svc.getQuotes(['cn_sh:600519'])
+    expect(svc.diagnostics().lastLatencyMs).toBeNull()
+    expect(svc.diagnostics().avgLatencyMs).toBeNull()
+  })
+
+  it('诊断:成功请求统计最近与平均延迟(FR-DATA-08)', async () => {
+    let call = 0
+    const svc = makeSvc(async () => {
+      now += ++call === 1 ? 120 : 180 // fetcher 期间推进时钟模拟耗时
+      return [makeQuote('cn_sh:600519', 100)]
+    })
+    await svc.getQuotes(['cn_sh:600519']) // t0=0 → t1=120,延迟 120
+    now += 80 // 请求间隔
+    await svc.getQuotes(['cn_sh:600519']) // t0=200 → t1=380,延迟 180
+    const d = svc.diagnostics()
+    expect(d.lastLatencyMs).toBe(180)
+    expect(d.avgLatencyMs).toBe(150)
+  })
 })

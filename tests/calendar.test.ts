@@ -8,8 +8,35 @@ import {
   isUSDst,
   isWeekend,
   marketStatus,
+  nextMarketOpen,
   usStockSession,
 } from '../src/core/calendar'
+
+describe('nextMarketOpen (market_status)', () => {
+  it('周末 → 下周一当地 09:30(上海 2026-11-16 01:30 UTC)', () => {
+    expect(nextMarketOpen('cn_sh', new Date('2026-11-14T03:00:00Z'))).toBe('2026-11-16T01:30:00.000Z')
+  })
+  it('交易日开盘前 → 今日开盘', () => {
+    // 2026-11-13 周五 09:00 CST,尚未开盘
+    expect(nextMarketOpen('cn_sh', new Date('2026-11-13T01:00:00Z'))).toBe('2026-11-13T01:30:00.000Z')
+  })
+  it('交易日开盘后 → 下一交易日', () => {
+    // 2026-11-13 周五 10:00 CST,已开盘
+    expect(nextMarketOpen('cn_sh', new Date('2026-11-13T02:00:00Z'))).toBe('2026-11-16T01:30:00.000Z')
+  })
+  it('节假日跳过:国庆 10/1-10/7 → 10/8 开盘', () => {
+    expect(nextMarketOpen('cn_sh', new Date('2026-10-01T01:00:00Z'))).toBe('2026-10-08T01:30:00.000Z')
+  })
+  it('美股冬令时(EST):09:30 EST = 14:30 UTC', () => {
+    expect(nextMarketOpen('us', new Date('2026-11-10T08:00:00Z'))).toBe('2026-11-10T14:30:00.000Z')
+  })
+  it('美股夏令时(EDT):09:30 EDT = 13:30 UTC', () => {
+    expect(nextMarketOpen('us', new Date('2026-07-01T12:00:00Z'))).toBe('2026-07-01T13:30:00.000Z')
+  })
+  it('24h 市场(fut_gl)→ null', () => {
+    expect(nextMarketOpen('fut_gl', new Date('2026-11-10T08:00:00Z'))).toBeNull()
+  })
+})
 
 describe('isWeekend (TC-CAL-01)', () => {
   it('周六/周日 → 周末', () => {

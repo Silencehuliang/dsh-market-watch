@@ -1,6 +1,6 @@
 # dsh-market-watch
 
-**DeepSeek Harness(dsh)的 Agent 增强型盯盘插件** —— 自选行情常驻侧栏、持仓盈亏账本、涨跌提醒、每日定时简报;同一份数据以 23 个 Agent 工具的形式暴露给模型。
+**DeepSeek Harness(dsh)的 Agent 增强型盯盘插件** —— 自选行情常驻侧栏、持仓盈亏账本、涨跌提醒、每日定时简报;同一份数据以 25 个 Agent 工具的形式暴露给模型。
 
 > 定位一句话:**不做最重的 UI,做最懂 Agent 什么时候该说话的那一个。**
 > 差异化来自 Agent 主动性:每日自动简报覆盖整个自选/持仓组合,快讯自动关联你的自选标的,而面板本身保持克制——模型替你先看一遍,而不是你让 Agent 看。
@@ -56,7 +56,7 @@ dsh plugin --profile web add dsh-plugin-market-watch
 
 标的代码规范为 `{market}:{code}`(如 `cn_sh:600519`、`hk:00700`、`us:AAPL`、`fund:110022`、`fut_cn:IF0`、`fx:susdcny`);对 Agent 说自然语言代码即可,搜索会自动纠正(实测 `usAAPL` → `us:AAPL.OQ`)。
 
-## Agent 工具参考(23 个)
+## Agent 工具参考(25 个)
 
 所有输出统一含 `asOf` / `source` / `delayed` 标注;延迟数据不冒充实时效;全部工具声明「不构成投资建议」。
 
@@ -73,6 +73,8 @@ dsh plugin --profile web add dsh-plugin-market-watch
 | `market_news_flash` | `limit?(默认 20)`, `keyword?` | 金十快讯,按时间倒序,60 秒缓存 |
 | `market_fund_rank` | `sort?(day/year)`, `limit?(默认 10)` | 基金排行 |
 | `market_export` / `market_import` | — | 自选/持仓/提醒/设置 带版本号导出导入 |
+| `market_status` | `markets?` | 各市场开收盘状态与下次开盘时间(按交易日历跳过周末/节假日) |
+| `market_diagnostics` | — | 数据源健康诊断:最近错误、最近成功时间、最近/平均延迟、冷却期状态 |
 | `market_watch_hello` | — | 插件自检 |
 
 ### watchlist_ / holdings_ — 自选与持仓
@@ -159,7 +161,6 @@ dsh plugin --profile web add dsh-plugin-market-watch
 - 免费接口无 SLA,可能限频、改版或随时失效(缓解见「可靠性」);
 - 交易日历为内置 2026 年 A 股节假日表,次年需手动更新;
 - 期货/外汇标的在侧栏归入「其他」分组;
-- SRS 规划中的 `market_status` / `market_diagnostics` 诊断工具尚未实现;
 - 桌面版(Electron)安装链路需 npm 发布后实测;桌面 profile 由应用内置管理,CLI 不直接操作;
 - 不做:交易下单、券商接入、量化回测、买卖建议、数字货币视图、移动端。
 

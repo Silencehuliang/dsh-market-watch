@@ -1,6 +1,6 @@
 # dsh-market-watch
 
-**Agent-enhanced market watch plugin for DeepSeek Harness (dsh)** — persistent watchlist sidebar, portfolio P&L ledger, price alerts, and daily scheduled briefings; the same data is exposed to the model as 23 agent tools.
+**Agent-enhanced market watch plugin for DeepSeek Harness (dsh)** — persistent watchlist sidebar, portfolio P&L ledger, price alerts, and daily scheduled briefings; the same data is exposed to the model as 25 agent tools.
 
 > Positioning: not the heaviest UI, but the one that best knows *when the agent should speak* — daily automatic briefings across your whole watchlist/portfolio, news flashes correlated with your holdings, and a deliberately restrained panel.
 
@@ -34,11 +34,11 @@ dsh plugin --profile web add dsh-plugin-market-watch
 
 Then: add watchlist items via search or a chat command, enter positions, and say “每天收盘后给我一份简报” to create the daily briefing.
 
-## Agent tools (23)
+## Agent tools (25)
 
 All outputs carry `asOf` / `source` / `delayed` markers.
 
-- **market_**: `market_quote` (batch quotes incl. bid1/ask1/orderBookRatio), `market_fund_estimate`, `market_search`, `market_kline` (qfq, json/csv), `market_fund_history`, `market_flow` (north/sector/concept), `market_news_flash`, `market_fund_rank`, `market_export` / `market_import`, `market_watch_hello`
+- **market_**: `market_quote` (batch quotes incl. bid1/ask1/orderBookRatio), `market_fund_estimate`, `market_search`, `market_kline` (qfq, json/csv), `market_fund_history`, `market_flow` (north/sector/concept), `market_news_flash`, `market_fund_rank`, `market_status` (per-market session status + next open), `market_diagnostics` (source health: last error/latency/cooldown), `market_export` / `market_import`, `market_watch_hello`
 - **watchlist_**: `watchlist_add` / `watchlist_list` / `watchlist_remove` (idempotent)
 - **holdings_**: `holdings_set` (fund amount→shares reverse-calc via cost NAV), `holdings_get` (privacy mode returns percentages only)
 - **alert_**: `alert_set` / `alert_list` / `alert_delete` / `alert_ack`
