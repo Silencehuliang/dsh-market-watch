@@ -53,6 +53,14 @@
 - ✅ **挂载方式**:market-watch 挂在 profile 的 `cordis.patch.yml`(`insert` 行,与该环境 matt-board/workstation 惯例一致;`patchReload: live` 下改 patch 热生效)。
 - ✅ 验证:`dsh --profile web --dump-config`(不带 --patch)配置树出现 `- id: market-watch / name: dsh-plugin-market-watch`,从 profile 安装解析成功。
 
+## 8. Windows「不受信任挂载点」安全机制(2026-11-10 重大环境发现)
+
+- **现象**:`dsh web` 启动崩溃于 profile `node_modules` 内 link 目录的 realpath(`UNKNOWN`,errno -4094);cmd 报 `The path cannot be traversed because it contains an untrusted mount point`(0xc00004be)。
+- **根因**:Windows Redirection Trust Mitigation(随 2026 年 WSL 3.x/安全更新强制生效)——junction 创建时按**创建者令牌**计算信任级别并持久化:**非提权进程创建 = untrusted**,普通进程遍历也被拒;同卷/跨卷无关。pnpm `link:` 依赖、`file:` 以外的所有 junction 型 link 全部失效。
+- **修复**:以**管理员终端**运行 `mklink /J` 重建 junction(创建即 trusted)。脚本:`.scratch/fix-junctions-admin.ps1`。已验证:普通进程可穿透 trusted junction,`dsh --dump-config` 正常解析全部 bundle。
+- **注意**:新增任何 link 型插件依赖,都必须在管理员终端创建 junction;另外 profile 里 3 个断链 junction(目标目录已不存在的 `dsh-matt-board`/`dsh-our-free-model`/`dsh-workstation`)已删除并在 patch 层注释挂载行,恢复项目后需同样以管理员重建。
+- `@anysearch/anysearch-dsh`、`dshmarket` 为版本不兼容(仅 skip 警告,无害),可在插件管理页卸载清理。
+
 ## 6. M0 数据源实测(2026-11-09)
 
 | 数据源 | 地址 | 结果 |
