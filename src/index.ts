@@ -10,9 +10,13 @@ import { normalizeSymbol, parseSymbol } from './core/symbol.js'
 import { evaluatePosition, sharesFromAmount } from './core/portfolio.js'
 import type { PositionResult } from './core/portfolio.js'
 import type { Quote, SymbolId } from './core/types.js'
+import { MarketWatchRuntime } from './remote/runtime.js'
+import type { MarketWatchDataAccess } from './remote/runtime.js'
+import { TYPERT_MANIFEST } from './remote/typert.js'
+import { TypertRegistry } from '@deepseek-ai/dsh-typert-registry'
 
 export const name = 'market-watch'
-export const inject = ['tools', 'storageDomain']
+export const inject = ['tools', 'storageDomain', 'typert']
 
 const marketWatchSpec = defineDomain({
   name: 'market_watch',
@@ -122,6 +126,88 @@ export function apply(ctx: Context) {
 
   /** 收盘保持:上次盈亏结果缓存(price≤0 时 evaluatePosition 保持它)。 */
   const prevResults = new Map<SymbolId, PositionResult>()
+
+  // ---------- Remote 数据组装(T11:供浏览器侧经 Remote 网关消费) ----------
+
+  const getSettingsView = () =>
+    domain?.global.get() ?? {
+      intervalMs: 5000,
+      riseColor: 'red' as const,
+      privacy: { exposeAmounts: false },
+    }
+
+  async function computeHoldingsView(): Promise<unknown> {
+    if (!domain) return { items: [] }
+    const settings = domain.global.get()
+    const expose = settings.privacy.exposeAmounts
+    const entries = Array.from(domain.table('holdings').entries())
+    const symbols = entries.map(([s]) => s as never)
+    const quotes = symbols.length ? await getQuotes(symbols) : []
+    const quoteBySymbol = new Map(quotes.map((q) => [q.symbol, q]))
+    return {
+      items: entries.map(([symbol, h]) => {
+        const quote = quoteBySymbol.get(symbol as never)
+        const hasPrice = (quote?.price ?? 0) > 0
+        const r = evaluatePosition(
+          { shares: h.shares ?? 0, costPrice: h.costPrice ?? h.costNav ?? 0, closed: h.closed },
+          { price: quote?.price ?? 0, prevClose: quote?.prevClose ?? 0 },
+          prevResults.get(symbol as never),
+        )
+        if (hasPrice) prevResults.set(symbol as never, r)
+        const base = { symbol, name: quote?.name, profitRate: r.profitRate, isClosed: r.isClosed }
+        if (!expose) return base
+        return {
+          ...base,
+          shares: h.shares,
+          amount: h.amount,
+          costPrice: h.costPrice,
+          costNav: h.costNav,
+          dayProfit: r.dayProfit,
+          cumProfit: r.cumProfit,
+          marketValue: r.marketValue,
+        }
+      }),
+    }
+  }
+
+  async function getWatchlistWithQuotes(): Promise<unknown> {
+    if (!domain) return { items: [] }
+    const entries = Array.from(domain.table('watchlist').entries())
+    const symbols = entries.map(([s]) => s as never)
+    const quotes = symbols.length ? await getQuotes(symbols) : []
+    const quoteBySymbol = new Map(quotes.map((q) => [q.symbol, q]))
+    return {
+      items: entries.map(([symbol, v]) => {
+        const q = quoteBySymbol.get(symbol as never)
+        return {
+          symbol: v.symbol,
+          name: v.name,
+          groupId: v.groupId,
+          pinned: v.pinned,
+          order: v.order,
+          price: q?.price ?? 0,
+          changePercent: q?.changePercent ?? 0,
+          asOf: q?.time ?? '',
+          stale: q === undefined || q.stale === true,
+        }
+      }),
+    }
+  }
+
+  const dataAccess: MarketWatchDataAccess = {
+    getWatchlistWithQuotes,
+    getHoldingsView: computeHoldingsView,
+    getSettingsView,
+  }
+  new MarketWatchRuntime(ctx, dataAccess)
+  ctx.effect(() => {
+    // ctx.typert 的静态类型是 consumer 契约(TypertRegistryContract);
+    // 宿主作为贡献方按运行时具体类 TypertRegistry 注册。
+    const dispose = (ctx.typert as TypertRegistry).register(TYPERT_MANIFEST)
+    return () => {
+      void dispose()
+    }
+  }, 'market-watch: typert manifest')
 
   ctx.tools.register(
     defineTool({
@@ -323,42 +409,7 @@ export function apply(ctx: Context) {
       parameters: {},
       output: jsonOutput,
       async execute() {
-        if (!domain) return []
-        const settings = domain.global.get()
-        const expose = settings.privacy.exposeAmounts
-        const entries = Array.from(domain.table('holdings').entries())
-        const symbols = entries.map(([s]) => s as never)
-        const quotes = symbols.length ? await getQuotes(symbols) : []
-        const quoteBySymbol = new Map(quotes.map((q) => [q.symbol, q]))
-        return toJson(
-          entries.map(([symbol, h]) => {
-            const quote = quoteBySymbol.get(symbol as never)
-            const hasPrice = (quote?.price ?? 0) > 0
-            const r = evaluatePosition(
-              { shares: h.shares ?? 0, costPrice: h.costPrice ?? h.costNav ?? 0, closed: h.closed },
-              { price: quote?.price ?? 0, prevClose: quote?.prevClose ?? 0 },
-              prevResults.get(symbol as never),
-            )
-            if (hasPrice) prevResults.set(symbol as never, r)
-            const base = {
-              symbol,
-              name: quote?.name,
-              profitRate: r.profitRate,
-              isClosed: r.isClosed,
-            }
-            if (!expose) return base
-            return {
-              ...base,
-              shares: h.shares,
-              amount: h.amount,
-              costPrice: h.costPrice,
-              costNav: h.costNav,
-              dayProfit: r.dayProfit,
-              cumProfit: r.cumProfit,
-              marketValue: r.marketValue,
-            }
-          }),
-        )
+        return toJson(await computeHoldingsView())
       },
     }),
   )
