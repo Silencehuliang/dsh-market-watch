@@ -80,6 +80,8 @@ const marketWatchSpec = defineDomain({
       alertsEnabled: z.boolean().default(true),
       alertsUnread: z.number().default(0),
       miniBarSymbols: z.array(z.string()).default([]),
+      // FR-ALERT-06:Webhook 推送(默认关闭;地址视为敏感信息仅本地存储)
+      webhookUrl: z.string().default(''),
     }),
     initial: {
       intervalMs: 5000,
@@ -238,6 +240,16 @@ export function apply(ctx: Context) {
             ((domain.global.get() as unknown as { alertsUnread?: number }).alertsUnread ?? 0) + 1,
         })
         console.log(`[market-watch] alert fired: ${info}`)
+        // FR-ALERT-06:Webhook 推送(默认关闭;url 非空才 POST)
+        const webhookUrl = (settings as unknown as { webhookUrl?: string }).webhookUrl
+        if (webhookUrl) {
+          void fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ msgtype: 'text', text: { content: `[market-watch] ${info}` } }),
+            signal: AbortSignal.timeout(5000),
+          }).catch(() => {})
+        }
       }
     }
   }
@@ -908,6 +920,30 @@ export function apply(ctx: Context) {
       async execute(args: { sort?: string; limit?: number }) {
         const sort = args.sort === 'year' ? 'year' : 'day'
         return toJson({ sort, items: await fetchFundRank(sort, args.limit ?? 10) })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'share_card',
+      description:
+        '生成收益分享卡片(SVG 文本,可直接渲染或保存)。默认隐去金额,只显示百分比与涨跌排行(FR-WL-08)。',
+      parameters: {},
+      output: jsonOutput,
+      async execute() {
+        if (!domain) return toJson({ error: 'storage not ready' })
+        const view = (await computeHoldingsView()) as { items: any[] }
+        const open = view.items.filter((i) => !i.isClosed)
+        const rows = open
+          .slice()
+          .sort((a, b) => b.profitRate - a.profitRate)
+          .map(
+            (i, idx) =>
+              `<text x="20" y="${60 + idx * 26}" font-size="14" fill="${i.profitRate >= 0 ? '#E5484D' : '#12B76A'}">${i.name}  ${i.profitRate >= 0 ? '+' : ''}${i.profitRate.toFixed(2)}%</text>`,
+          )
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="${80 + rows.length * 26}" viewBox="0 0 360 ${80 + rows.length * 26}"><rect width="100%" height="100%" rx="12" fill="#1a1a2e"/><text x="20" y="34" font-size="16" fill="#fff">📈 盯盘助手 · 收益榜</text>${rows.join('')}</svg>`
+        return toJson({ format: 'svg', svg })
       },
     }),
   )
