@@ -561,6 +561,128 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(
     defineTool({
+      name: 'portfolio_summary',
+      description:
+        '组合持仓汇总:当日盈亏、累计盈亏、组合总收益率、涨跌分布、最大波动标的(受隐私模式限制)。数据来自公开接口,不构成投资建议。',
+      parameters: {},
+      output: jsonOutput,
+      async execute() {
+        if (!domain) return toJson({ error: 'storage not ready' })
+        const settings = domain.global.get()
+        const expose = settings.privacy.exposeAmounts
+        const view = (await computeHoldingsView()) as { items: any[] }
+        const open = view.items.filter((i) => !i.isClosed)
+        const dayTotal = open.reduce((s, i) => s + (i.dayProfit ?? 0), 0)
+        const cumTotal = open.reduce((s, i) => s + (i.cumProfit ?? 0), 0)
+        const costTotal = open.reduce((s, i) => s + (i.costPrice ?? i.costNav ?? 0) * (i.shares ?? 0), 0)
+        const up = open.filter((i) => i.profitRate > 0).length
+        const down = open.filter((i) => i.profitRate < 0).length
+        const maxSwing = open
+          .slice()
+          .sort((a, b) => Math.abs(b.profitRate) - Math.abs(a.profitRate))[0]
+        const maxSwingOut = maxSwing
+          ? { symbol: maxSwing.symbol, name: maxSwing.name, profitRate: maxSwing.profitRate }
+          : null
+        if (!expose) {
+          return toJson({
+            count: open.length,
+            distribution: { up, down, flat: open.length - up - down },
+            maxSwing: maxSwingOut,
+          })
+        }
+        return toJson({
+          count: open.length,
+          dayProfit: dayTotal,
+          cumProfit: cumTotal,
+          totalRate: costTotal > 0 ? ((cumTotal) / costTotal) * 100 : null,
+          distribution: { up, down, flat: open.length - up - down },
+          maxSwing: maxSwingOut,
+        })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'market_export',
+      description: '导出自选/分组/持仓/设置为 JSON(带版本号),可用于备份或迁移(FR-WL-07)。',
+      parameters: {},
+      output: jsonOutput,
+      async execute() {
+        if (!domain) return toJson({ error: 'storage not ready' })
+        return toJson({
+          version: 2,
+          exportedAt: new Date().toISOString(),
+          watchlist: Array.from(domain.table('watchlist').entries()).map(([k, v]) => ({ key: k, ...v })),
+          groups: Array.from(domain.table('groups').entries()).map(([k, v]) => ({ key: k, ...v })),
+          holdings: Array.from(domain.table('holdings').entries()).map(([k, v]) => ({ key: k, ...v })),
+          settings: domain.global.get(),
+        })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'market_import',
+      description:
+        '导入 market_export 导出的 JSON(带版本号校验,不匹配的版本明确报错;同 key 覆盖)。FR-WL-07。',
+      parameters: {
+        json: { type: 'string', required: true, description: '导出的 JSON 字符串' },
+      },
+      output: jsonOutput,
+      async execute(args: { json: string }) {
+        if (!domain) return toJson({ error: 'storage not ready' })
+        let parsed: {
+          version?: number
+          watchlist?: Array<{ key: string; symbol: string; name: string; groupId: string; pinned: boolean; order: number; addedAt: string }>
+          groups?: Array<{ key: string; name: string; order: number }>
+          holdings?: Array<Record<string, unknown> & { key: string; updatedAt: string }>
+          settings?: Record<string, unknown>
+        }
+        try {
+          parsed = JSON.parse(args.json)
+        } catch (e) {
+          return toJson({ error: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` })
+        }
+        if (parsed.version !== 2 && parsed.version !== 1) {
+          return toJson({ error: `unsupported export version: ${String(parsed.version)}` })
+        }
+        let counts = { watchlist: 0, groups: 0, holdings: 0, settings: false }
+        for (const it of parsed.watchlist ?? []) {
+          if (!it.key) continue
+          await domain.table('watchlist').put(it.key as never, {
+            symbol: it.symbol,
+            name: it.name,
+            groupId: it.groupId,
+            pinned: it.pinned,
+            order: it.order,
+            addedAt: it.addedAt,
+          })
+          counts.watchlist++
+        }
+        for (const g of parsed.groups ?? []) {
+          if (!g.key) continue
+          await domain.table('groups').put(g.key as never, { name: g.name, order: g.order })
+          counts.groups++
+        }
+        for (const h of parsed.holdings ?? []) {
+          if (!h.key) continue
+          const { key, ...rest } = h
+          await domain.table('holdings').put(key as never, rest as never)
+          counts.holdings++
+        }
+        if (parsed.settings) {
+          await (domain.global.set as (v: unknown) => Promise<unknown>)(parsed.settings)
+          counts.settings = true
+        }
+        return toJson({ imported: counts })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
       name: 'holdings_get',
       description:
         '查询持仓与盈亏(受隐私模式限制,默认只返回百分比)。数据来自公开接口,不构成投资建议。',
