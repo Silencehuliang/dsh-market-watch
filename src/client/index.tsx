@@ -25,6 +25,94 @@ const TYPE_LABEL: Record<string, string> = {
   other: '其他',
 }
 
+/** 常驻迷你条(FR-UI-02):自选前 3 标的 + 总收益率;点击打开行情 tab。 */
+function MiniBar(props: any) {
+  const [data, setData] = useState<{
+    items: any[]
+    totalRate: number | null
+    holdingsCount: number
+  } | null>(null)
+
+  const reload = useCallback(async () => {
+    try {
+      const q = (await props.fetchQuotes()) as { items: any[] }
+      const h = (await props.fetchHoldings()) as { items: any[] }
+      const holdingItems = h.items.filter((i) => !i.isClosed)
+      const totalCost = holdingItems.reduce((s, i) => s + (i.costPrice ?? i.costNav ?? 0) * (i.shares ?? 0), 0)
+      const totalValue = holdingItems.reduce((s, i) => s + (i.marketValue ?? 0), 0)
+      setData({
+        items: q.items.slice(0, 3),
+        totalRate: holdingItems.length > 0 && totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : null,
+        holdingsCount: holdingItems.length,
+      })
+    } catch {
+      /* 静默:迷你条不打扰 */
+    }
+  }, [props.fetchQuotes, props.fetchHoldings])
+
+  useEffect(() => {
+    void reload()
+    const t = setInterval(() => void reload(), 10000)
+    return () => clearInterval(t)
+  }, [reload])
+
+  const open = () => {
+    try {
+      props.open?.()
+    } catch {
+      /* 无会话时 openTab 静默失败(见 verification.md §10) */
+    }
+  }
+
+  const pill: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '2px 10px',
+    fontSize: 12,
+    cursor: 'pointer',
+    borderRadius: 999,
+    background: 'rgba(128,128,128,0.14)',
+    fontVariantNumeric: 'tabular-nums',
+  }
+
+  if (data === null) {
+    return (
+      <div style={pill} onClick={open} title="打开行情侧栏">
+        📈 market-watch
+      </div>
+    )
+  }
+  return (
+    <div style={pill} onClick={open} title="打开行情侧栏">
+      <span>📈</span>
+      {data.items.length === 0 ? (
+        <span style={{ opacity: 0.7 }}>无自选</span>
+      ) : (
+        data.items.map((it) => (
+          <span key={it.symbol} style={{ display: 'inline-flex', gap: 4 }}>
+            <span style={{ fontWeight: 600 }}>{it.name}</span>
+            <span>{it.price > 0 ? it.price : '—'}</span>
+            <span style={{ color: pctColor(it.changePercent) }}>
+              {it.changePercent >= 0 ? '+' : ''}
+              {it.changePercent.toFixed(2)}%
+            </span>
+          </span>
+        ))
+      )}
+      {data.totalRate !== null && (
+        <span style={{ borderTop: '1px solid rgba(128,128,128,0.3)', paddingLeft: 8 }}>
+          总收益
+          <span style={{ color: pctColor(data.totalRate), marginLeft: 2 }}>
+            {data.totalRate >= 0 ? '+' : ''}
+            {data.totalRate.toFixed(2)}%
+          </span>
+        </span>
+      )}
+    </div>
+  )
+}
+
 function MarketBody(props: any) {
   const [items, setItems] = useState<any[] | null>(null)
   const [groups, setGroups] = useState<any[]>([])
@@ -356,6 +444,7 @@ export function apply(ctx: any): void {
   }
 
   const fetchQuotes = async () => call('getWatchlist') as Promise<{ items: any[] }>
+  const fetchHoldings = async () => call('getHoldings') as Promise<{ items: any[] }>
 
   // 阶段一:注册 tab 类型 + 侧栏引导页入口盒(点击即打开 tab)
   ctx.effect(
@@ -412,23 +501,25 @@ export function apply(ctx: any): void {
     'market-watch: tab title',
   )
 
-  // 常驻徽章(M0 的 shell.overlay,list slot 用 id)
+  // 迷你条(FR-UI-02):shell.overlay(M0 实测可用挂载点),显示自选前 3 标的 + 持仓总收益率,点击打开行情 tab
   ctx.effect(
     () =>
       ctx.slots.inject('shell.overlay', () =>
         ctx.slots.register(
-          { name: 'shell.overlay', id: MARKET_ID, order: 10 },
-          () => (
-            <div
-              style={{ padding: '2px 8px', fontSize: 12, opacity: 0.85 }}
-              title="dsh-plugin-market-watch 已加载"
-            >
-              📈 market-watch
-            </div>
-          ),
+          {
+          name: 'shell.overlay',
+          id: MARKET_ID,
+          order: 10,
+          inject: () => ({
+            fetchQuotes,
+            fetchHoldings,
+            open: () => ctx.sidebarRight.openTab(MARKET_KIND),
+          }),
+        },
+          (props: any) => <MiniBar fetchQuotes={props.fetchQuotes} fetchHoldings={props.fetchHoldings} />,
         ),
       ),
-    'market-watch: overlay badge',
+    'market-watch: mini bar',
   )
 
   // 会话页头一键打开入口(FR-UI-01)
