@@ -1,6 +1,6 @@
 ## Problem Statement
 
-开发者在使用 DeepSeek Harness(dsh)编码时,无法低打扰地查看行情与持仓。VSCode 生态的看盘类插件证明了「在开发工具里常驻看盘」的稳定需求,但 dsh 生态现有插件(dsh-plugin-astock / dsh-plugin-aportfolio / dsh-fund-research)未覆盖:基金盘中估值、港股/美股/期货/外汇、常驻行情面板、价格提醒、定时简报。
+开发者在使用 DeepSeek Harness(dsh)编码时,无法低打扰地查看行情与持仓,而 dsh 生态现有插件(dsh-plugin-astock / dsh-plugin-aportfolio / dsh-fund-research)未覆盖:基金盘中估值、港股/美股/期货/外汇、常驻行情面板、价格提醒、定时简报。
 
 ## Solution
 
