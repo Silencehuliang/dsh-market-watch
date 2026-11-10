@@ -76,6 +76,17 @@ export const TYPERT_MANIFEST: TypertContribution = {
           },
           {
             kind: 'method',
+            name: 'getKline',
+            signature: 'getKline(symbol: string, days: number, signal?: AbortSignal): Promise<KlineResult>',
+          },
+          {
+            kind: 'method',
+            name: 'getFundHistory',
+            signature:
+              'getFundHistory(code: string, days: number, signal?: AbortSignal): Promise<FundHistoryResult>',
+          },
+          {
+            kind: 'method',
             name: 'updateSettings',
             signature:
               'updateSettings(patch: Record<string, unknown>, signal?: AbortSignal): Promise<OpResult>',

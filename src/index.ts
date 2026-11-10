@@ -7,6 +7,7 @@ import { QuoteService } from './core/quote-service.js'
 import { fetchSinaStocks } from './core/providers/sina.js'
 import { fetchTencentQuotes } from './core/providers/tencent.js'
 import { fetchFuturesFxQuotes, fetchFxRates } from './core/providers/futures-fx.js'
+import { fetchFundHistory, fetchKline, rangeToDays } from './core/providers/kline.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
 import { isMarketOpenNow, isTradingDay, marketStatus } from './core/calendar.js'
@@ -456,6 +457,11 @@ export function apply(ctx: Context) {
     createGroup: (name) => createGroupCore(name),
     deleteGroup: (groupId) => deleteGroupCore(groupId),
     updateSettings: (patch) => updateSettingsCore(patch),
+    getKline: async (symbolRaw, days) => {
+      const symbolId = normalizeSymbol(symbolRaw)
+      return { symbol: symbolId, bars: await fetchKline(symbolId, days) }
+    },
+    getFundHistory: async (code, days) => ({ code, list: await fetchFundHistory(code, days) }),
   }
   new MarketWatchRuntime(ctx, dataAccess)
   ctx.effect(() => {
@@ -767,6 +773,49 @@ export function apply(ctx: Context) {
             error: `schedule create failed: ${e instanceof Error ? e.message : String(e)}`,
           })
         }
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'market_kline',
+      description:
+        '日K线(前复权,A股/港股/美股)。返回 json 数组或紧凑 csv(节省 token)。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        symbol: { type: 'string', required: true, description: '标的代码' },
+        range: { type: 'string', description: '1w/1m/3m/6m/1y,默认 1m' },
+        format: { type: 'string', description: 'json 或 csv(默认 json)' },
+      },
+      output: jsonOutput,
+      async execute(args: { symbol: string; range?: string; format?: string }) {
+        const symbolId = normalizeSymbol(args.symbol)
+        const bars = await fetchKline(symbolId, rangeToDays(args.range ?? '1m'))
+        if (args.format === 'csv') {
+          return {
+            type: 'text' as const,
+            text: `date,open,close,high,low,volume\n${bars
+              .map((b) => `${b.date},${b.open},${b.close},${b.high},${b.low},${b.volume}`)
+              .join('\n')}`,
+          }
+        }
+        return toJson({ symbol: symbolId, bars })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'market_fund_history',
+      description: '基金历史净值(单位/累计净值与日涨幅)。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        code: { type: 'string', required: true, description: '基金代码,如 110022' },
+        days: { type: 'number', description: '条数(默认 20)' },
+      },
+      output: jsonOutput,
+      async execute(args: { code: string; days?: number }) {
+        const list = await fetchFundHistory(args.code, args.days ?? 20)
+        return toJson({ code: args.code, list })
       },
     }),
   )

@@ -38,6 +38,40 @@ export const settingsSchema = z
 
 export const settingsResultSchema = z.object({ settings: settingsSchema }).readonly()
 
+export const klineResultSchema = z
+  .object({
+    symbol: z.string(),
+    bars: z
+      .array(
+        z.object({
+          date: z.string(),
+          open: z.number(),
+          close: z.number(),
+          high: z.number(),
+          low: z.number(),
+          volume: z.number(),
+        }),
+      )
+      .readonly(),
+  })
+  .readonly()
+
+export const fundHistoryResultSchema = z
+  .object({
+    code: z.string(),
+    list: z
+      .array(
+        z.object({
+          date: z.string(),
+          nav: z.number(),
+          accNav: z.number(),
+          changePercent: z.number(),
+        }),
+      )
+      .readonly(),
+  })
+  .readonly()
+
 export const watchlistResultSchema = z
   .object({
     items: z.array(watchlistItemSchema),
@@ -215,6 +249,32 @@ export const MARKET_WATCH_INVOCATIONS: readonly InvocationDescriptor[] = [
     parameters: [json('name', 'name', `${PKG}#GroupName`, z.string())],
     cancellation: { parameter: 'signal' },
     result: resultOf(`${PKG}#OpResult`, opResultSchema),
+  },
+  {
+    id: `${PKG}#market-watch/getKline`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'getKline',
+    invocation: { kind: 'direct' },
+    parameters: [
+      json('symbol', 'symbol', `${PKG}#KlineSymbol`, z.string()),
+      json('days', 'days', `${PKG}#KlineDays`, z.number()),
+    ],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#KlineResult`, klineResultSchema),
+  },
+  {
+    id: `${PKG}#market-watch/getFundHistory`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'getFundHistory',
+    invocation: { kind: 'direct' },
+    parameters: [
+      json('code', 'code', `${PKG}#FundCode`, z.string()),
+      json('days', 'days', `${PKG}#FundDays`, z.number()),
+    ],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#FundHistoryResult`, fundHistoryResultSchema),
   },
   {
     id: `${PKG}#market-watch/deleteGroup`,

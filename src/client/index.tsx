@@ -143,6 +143,92 @@ function MiniBar(props: any) {
   )
 }
 
+/** 详情视图(FR-UI-04 精简版):K线 SVG 折线(零依赖)+ 基金历史净值。 */
+function DetailView(props: any) {
+  const [bars, setBars] = useState<any[] | null>(null)
+  const [navs, setNavs] = useState<any[] | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        if (props.isFund) {
+          const h = (await props.fetchFundHistory(props.symbol.split(':')[1], 20)) as unknown as {
+            list?: any[]
+          }
+          if (alive) setNavs(h.list ?? [])
+        } else {
+          const k = (await props.fetchKline(props.symbol, 22)) as unknown as { bars?: any[] }
+          if (alive) setBars(k.bars ?? [])
+        }
+      } catch (e) {
+        if (alive) setErr(e instanceof Error ? e.message : String(e))
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [props.symbol, props.isFund, props.fetchKline, props.fetchFundHistory])
+
+  if (err) return <div style={{ padding: '4px 10px', fontSize: 11, opacity: 0.7 }}>{err}</div>
+
+  // K线 SVG 折线(收盘价,零依赖,FR-UI-04)
+  const line = (points: number[], w: number, h: number, color: string) => {
+    if (points.length < 2) return null
+    const min = Math.min(...points)
+    const max = Math.max(...points)
+    const span = max - min || 1
+    const step = w / (points.length - 1)
+    const d = points.map((p, i) => `${(i * step).toFixed(1)},${(h - ((p - min) / span) * h).toFixed(1)}`).join(' ')
+    return (
+      <polyline points={d} fill="none" stroke={color} strokeWidth="1.5" />
+    )
+  }
+
+  if (props.isFund) {
+    return (
+      <div style={{ padding: '4px 10px 8px', fontSize: 11 }}>
+        {navs === null ? (
+          <span style={{ opacity: 0.6 }}>{props.t('loading')}</span>
+        ) : (
+          <table style={{ fontSize: 11, borderCollapse: 'collapse' }}>
+            <tbody>
+              {navs.slice(0, 10).map((n: any) => (
+                <tr key={n.date}>
+                  <td style={{ paddingRight: 10, opacity: 0.7 }}>{n.date}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{n.nav}</td>
+                  <td style={{ color: pctColor(n.changePercent, 'red'), paddingLeft: 8, fontVariantNumeric: 'tabular-nums' }}>
+                    {n.changePercent >= 0 ? '+' : ''}
+                    {n.changePercent.toFixed(2)}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ padding: '4px 10px 8px' }}>
+      {bars === null ? (
+        <span style={{ fontSize: 11, opacity: 0.6 }}>{props.t('loading')}</span>
+      ) : err ? (
+        <span style={{ fontSize: 11, opacity: 0.7 }}>{err}</span>
+      ) : (
+        <svg viewBox="0 0 200 60" width="100%" height="60">
+          {line(bars.map((b) => b.close), 200, 56, pctColor(bars[bars.length - 1]!.close - bars[0]!.close, 'red'))}
+        </svg>
+      )}
+      <div style={{ fontSize: 10, opacity: 0.6 }}>
+        {bars?.length ?? 0} bars · 近 1 个月(前复权)
+      </div>
+    </div>
+  )
+}
+
 function MarketBody(props: any) {
   const t: (k: string) => string = props.t
   const [items, setItems] = useState<any[] | null>(null)
@@ -158,6 +244,7 @@ function MarketBody(props: any) {
   const [busy, setBusy] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [newGroupName, setNewGroupName] = useState('')
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const reload = useCallback(async () => {
     if (typeof document !== 'undefined' && document.hidden) return // FR-UI-07:不可见暂停
@@ -411,7 +498,11 @@ function MarketBody(props: any) {
                 </div>
                 {!isCollapsed &&
                   bucket.map((it) => (
-                    <div key={it.symbol} style={rowStyle}>
+                    <div key={it.symbol}>
+                    <div
+                      style={{ ...rowStyle, cursor: 'pointer' }}
+                      onClick={() => setExpanded((v) => (v === it.symbol ? null : it.symbol))}
+                    >
                       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                         <span
                           style={{
@@ -484,13 +575,26 @@ function MarketBody(props: any) {
                           style={ghostBtn}
                           title="✕"
                           disabled={busy !== null}
-                          onClick={() => void remove(it.symbol)}
+                          onClick={(e) => {
+                            e.stopPropagation() // 不触发行点击(详情展开)
+                            void remove(it.symbol)
+                          }}
                         >
                           {busy === it.symbol ? '…' : '✕'}
                         </button>
                       </div>
                     </div>
-                  ))}
+                    {expanded === it.symbol && (
+                      <DetailView
+                        symbol={it.symbol}
+                        isFund={it.isFund}
+                        fetchKline={props.fetchKline}
+                        fetchFundHistory={props.fetchFundHistory}
+                        t={t}
+                      />
+                    )}
+                  </div>
+                ))}
               </div>
             )
           })
@@ -623,6 +727,8 @@ export function apply(ctx: any): void {
               setSortMode: (mode: string) => call('setSortMode', mode),
               createGroup: (name: string) => call('createGroup', name),
               updateSettings: (patch: Record<string, unknown>) => call('updateSettings', patch),
+              fetchKline: (symbol: string, days: number) => call('getKline', symbol, days) as Promise<any[]>,
+              fetchFundHistory: (code: string, days: number) => call('getFundHistory', code, days) as Promise<any[]>,
               t,
             }),
           },

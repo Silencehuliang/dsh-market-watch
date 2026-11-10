@@ -7,7 +7,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
+  fundHistoryResultSchema,
   holdingsResultSchema,
+  klineResultSchema,
   opResultSchema,
   searchResultSchema,
   settingsResultSchema,
@@ -35,6 +37,8 @@ export interface MarketWatchDataAccess {
   createGroup(name: string): Promise<unknown>
   deleteGroup(groupId: string): Promise<unknown>
   updateSettings(patch: Record<string, unknown>): Promise<unknown>
+  getKline(symbol: string, days: number): Promise<unknown>
+  getFundHistory(code: string, days: number): Promise<unknown>
 }
 
 export class MarketWatchRuntime extends TypertRemoteService {
@@ -117,6 +121,20 @@ export class MarketWatchRuntime extends TypertRemoteService {
   async deleteGroup(groupId: string, signal?: AbortSignal): Promise<OpResult> {
     void signal
     return opResultSchema.parse(await this.data.deleteGroup(groupId))
+  }
+
+  /** 日K线(FR-DATA-10)。 */
+  @Remote
+  async getKline(symbol: string, days: number, signal?: AbortSignal): Promise<unknown> {
+    void signal
+    return klineResultSchema.parse(await this.data.getKline(symbol, days))
+  }
+
+  /** 基金历史净值(FR-DATA-10)。 */
+  @Remote
+  async getFundHistory(code: string, days: number, signal?: AbortSignal): Promise<unknown> {
+    void signal
+    return fundHistoryResultSchema.parse(await this.data.getFundHistory(code, days))
   }
 
   /** 部分更新设置(zod schema 校验兜底)。 */
