@@ -83,6 +83,12 @@
 - ⚠️ **存储版本坑**:`compatibleVersions: [1]` 对 json backend 的 whole-unit 版本检查**不生效**——`version: 2` 打开 v1 存储直接 `fatal: StorageError: version-mismatch`,dsh 启动失败。结论:**新增表 + global 加 `z.default()` 字段这类向后兼容变更,保持 version 不变**;真正改记录格式时才 bump,且 bump 前需手工迁移或删除旧单元文件(`dshHomePath('storages')`)。
 - 前端搜索焦点:playwright `type` 全局键盘输入会落到主输入框,需先 click/fill 目标输入框。
 
+## 12. Windows 中文编码坑(2026-11-10)
+
+- ⚠️ **PowerShell 5.1 按 GBK 解析无 BOM 的 UTF-8 `.ps1` 文件**——含中文 here-string 的创建脚本执行后,`gh issue create` 收到的是已损坏的字符串(GitHub issue 标题/正文乱码,如「瀹夸富」)。
+- **修复方式**:node 全程 UTF-8 读源文件,经 `execSync(…, { input: JSON.stringify({title, body}) })` 把 payload 走 stdin 传给 `gh api -X PATCH --input -`。修复脚本 `.scratch/fix-titles.mjs`。
+- **预防**:凡经 CLI 传中文,一律用 `--body-file`/`--input`(UTF-8 文件)+ node 调用,不要在 PowerShell 5.1 里内联中文字符串。
+
 ## 6. M0 数据源实测(2026-11-09)
 
 | 数据源 | 地址 | 结果 |
