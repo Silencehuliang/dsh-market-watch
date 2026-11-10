@@ -9,7 +9,7 @@ import { fetchSinaStocks } from '../../src/core/providers/sina.js'
 import { fetchTencentQuotes } from '../../src/core/providers/tencent.js'
 import { fetchFuturesFxQuotes, fetchFxRates } from '../../src/core/providers/futures-fx.js'
 import { fetchKline, fetchFundHistory } from '../../src/core/providers/kline.js'
-import { fetchHsgFlow, fetchSectorFlow, fetchNewsFlash, fetchFundRank } from '../../src/core/providers/m4.js'
+import { fetchHsgDaily, fetchSectorFlow, fetchNewsFlash, fetchFundRank } from '../../src/core/providers/m4.js'
 import { fetchFundEstimates } from '../../src/core/providers/eastmoney.js'
 import { searchTencent } from '../../src/core/providers/tencent-search.js'
 import { searchFunds } from '../../src/core/providers/fund-search.js'
@@ -175,12 +175,14 @@ d('实机:金十快讯与资金流', () => {
     await sleep(300)
   }, 20_000)
 
-  it('沪深港通资金(kamt.rtmin)', async () => {
-    const flow = await fetchHsgFlow()
-    expect(flow.time).toBeTruthy()
-    expect(Number.isFinite(flow.shNet)).toBe(true)
-    expect(Number.isFinite(flow.northTotal)).toBe(true)
-    console.log(`[live] hsg @${flow.time} sh=${flow.shNet} sz=${flow.szNet} north=${flow.northTotal}(亿)`)
+  it('沪深港通(#34):北向仅总成交额、南向净买入可信(= 买−卖)', async () => {
+    const { south, north } = await fetchHsgDaily()
+    expect(north.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(north.turnoverCny).toBeGreaterThan(0)
+    expect(north.turnoverCny).toBeLessThan(10000) // 北向日总成交额合理区间
+    expect(Math.abs(south.netCny)).toBeLessThan(1000) // 南向净买入不可能是「额度整数倍」占位值
+    expect(south.turnoverCny).toBeGreaterThan(0)
+    console.log(`[live] hsg ${south.date} 北向总成交=${north.turnoverCny.toFixed(1)}亿 南向净买入=${south.netCny.toFixed(2)}亿`)
     await sleep(300)
   }, 20_000)
 

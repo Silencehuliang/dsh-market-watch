@@ -31,6 +31,7 @@ export const zh = {
   'mini.open': '打开行情侧栏',
   'mini.none': '无自选',
   'mini.total': '总收益',
+  'fx.missing': '部分持仓汇率缺失,金额未折算',
   'mini.loaded': 'dsh-plugin-market-watch 已加载',
 }
 
@@ -64,5 +65,6 @@ export const en = {
   'mini.open': 'Open market sidebar',
   'mini.none': 'No watchlist',
   'mini.total': 'Total',
+  'fx.missing': 'FX rate unavailable; amounts not converted',
   'mini.loaded': 'dsh-plugin-market-watch loaded',
 }

@@ -55,6 +55,7 @@ function MiniBar(props: any) {
   const [data, setData] = useState<{
     items: any[]
     totalRate: number | null
+    fxMissingAny: boolean
     riseColor: string
     alertsUnread: number
   } | null>(null)
@@ -69,8 +70,13 @@ function MiniBar(props: any) {
       }
       const h = (await props.fetchHoldings()) as { items: any[] }
       const holdingItems = h.items.filter((i) => !i.isClosed)
-      const totalCost = holdingItems.reduce((s, i) => s + (i.costPrice ?? i.costNav ?? 0) * (i.shares ?? 0), 0)
+      // 外币成本按汇率折算后再汇总(与 portfolio_summary 同口径;#33 修复:此前 CNY 市值对 USD 成本,总收益率失真)
+      const totalCost = holdingItems.reduce(
+        (s, i) => s + (i.costPrice ?? i.costNav ?? 0) * (i.shares ?? 0) * (i.fxRate ?? 1),
+        0,
+      )
       const totalValue = holdingItems.reduce((s, i) => s + (i.marketValue ?? 0), 0)
+      const fxMissingAny = holdingItems.some((i) => i.fxMissing)
       // 迷你条标的配置生效(FR-UI-05):设置过 miniBarSymbols 则按其选取,否则取自选前 3
       const pref: string[] = q.settings?.miniBarSymbols ?? []
       const norm = (p: string) => p.trim().toLowerCase().replace(/^(sh|sz|bj|hk|gb|usr|nf|hf)_/, '')
@@ -82,6 +88,7 @@ function MiniBar(props: any) {
       setData({
         items: chosen,
         totalRate: holdingItems.length > 0 && totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : null,
+        fxMissingAny,
         riseColor: q.riseColor ?? 'red',
         alertsUnread: q.settings?.alertsUnread ?? 0,
       })
@@ -150,6 +157,11 @@ function MiniBar(props: any) {
             {data.totalRate >= 0 ? '+' : ''}
             {data.totalRate.toFixed(2)}%
           </span>
+          {data.fxMissingAny && (
+            <span title={props.t('fx.missing')} style={{ opacity: 0.6, marginLeft: 4 }}>
+              ≈
+            </span>
+          )}
         </span>
       )}
     </div>

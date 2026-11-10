@@ -33,7 +33,7 @@ vi.mock('../../src/core/providers/kline.js', async (importOriginal) => ({
 }))
 vi.mock('../../src/core/providers/m4.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  fetchHsgFlow: vi.fn(),
+  fetchHsgDaily: vi.fn(),
   fetchSectorFlow: vi.fn(),
   fetchNewsFlash: vi.fn(),
   fetchFundRank: vi.fn(),
@@ -68,7 +68,7 @@ const fetchFuturesFxQuotes = vi.mocked(futuresFxMod.fetchFuturesFxQuotes)
 const fetchFxRates = vi.mocked(futuresFxMod.fetchFxRates)
 const fetchKline = vi.mocked(klineMod.fetchKline)
 const fetchFundHistory = vi.mocked(klineMod.fetchFundHistory)
-const fetchHsgFlow = vi.mocked(m4Mod.fetchHsgFlow)
+const fetchHsgDaily = vi.mocked(m4Mod.fetchHsgDaily)
 const fetchSectorFlow = vi.mocked(m4Mod.fetchSectorFlow)
 const fetchNewsFlash = vi.mocked(m4Mod.fetchNewsFlash)
 const fetchFundRank = vi.mocked(m4Mod.fetchFundRank)
@@ -233,7 +233,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })))
   ;[
     fetchSinaStocks, fetchTencentQuotes, fetchFuturesFxQuotes, fetchFxRates, fetchKline,
-    fetchFundHistory, fetchHsgFlow, fetchSectorFlow, fetchNewsFlash, fetchFundRank,
+    fetchFundHistory, fetchHsgDaily, fetchSectorFlow, fetchNewsFlash, fetchFundRank,
     fetchFundEstimates, searchFunds, searchTencent,
   ].forEach((m) => m.mockReset())
 })
@@ -392,7 +392,7 @@ describe('持仓账本与隐私', () => {
     h.dispose()
   })
 
-  it('默认隐私模式:holdings_get 只含百分比,金额不出现', async () => {
+  it('默认隐私模式:holdings_get 只含百分比,金额不出现;币种可见(#33)', async () => {
     const h = await setup()
     await seed(h)
     const r = (await h.call('holdings_get')) as any
@@ -405,6 +405,8 @@ describe('持仓账本与隐私', () => {
       expect(it.dayProfit).toBeUndefined()
       expect(it.marketValue).toBeUndefined()
     }
+    const aapl = r.items.find((i: any) => i.symbol === 'us:AAPL.OQ')!
+    expect(aapl.currency).toBe('USD') // 币种非敏感量,隐私模式也下发(#33 修复)
     h.dispose()
   })
 
@@ -621,11 +623,21 @@ describe('K线 / 基金 / 快讯 / 资金流', () => {
     h.dispose()
   })
 
-  it('market_flow:north / sector / concept;非法 kind 报错', async () => {
+  it('market_flow:north(不可用说明)/ south / sector;非法 kind 报错(#34)', async () => {
     const h = await setup()
-    fetchHsgFlow.mockResolvedValue({ time: '10:00', shNet: 12.3, szNet: 8.9, northTotal: 21.2 })
+    fetchHsgDaily.mockResolvedValue({
+      south: { date: '2026-11-10', netCny: -27.39, buyCny: 353.62, sellCny: 381.02, turnoverCny: 734.64 },
+      north: { date: '2026-11-10', turnoverCny: 1983.29 },
+    })
     const north = (await h.call('market_flow', { kind: 'north' })) as any
-    expect(north.northTotal).toBeCloseTo(21.2, 6)
+    expect(north.unavailable).toBe(true) // 净买入停止披露,明确说明而非恒 0
+    expect(north.netBuyCny).toBeNull()
+    expect(north.totalTurnoverCny).toBeCloseTo(1983.29, 4)
+    expect(north.reason).toContain('停止披露')
+    expect(north.source).toBe('eastmoney')
+    const south = (await h.call('market_flow', { kind: 'south' })) as any
+    expect(south.netCny).toBeCloseTo(-27.39, 4)
+    expect(south.turnoverCny).toBeCloseTo(734.64, 4)
     fetchSectorFlow.mockResolvedValue([{ name: '半导体', netInflow: 5.6, changePercent: 2.1 }])
     const sector = (await h.call('market_flow', { kind: 'sector', limit: 5 })) as any
     expect(sector.items[0]!.name).toBe('半导体')
@@ -690,15 +702,17 @@ describe('market_status 与诊断', () => {
 })
 
 describe('导入导出与隐私边界', () => {
-  it('export → import 往返恢复全部状态;版本与 JSON 校验', async () => {
+  it('export(full) → import 往返恢复全部状态;版本与 JSON 校验', async () => {
     const h1 = await setup()
     await h1.call('watchlist_add', { symbol: 'sh600519', name: '贵州茅台' })
     await h1.call('holdings_set', { symbol: 'sh600519', shares: 100, costPrice: 1450 })
     await h1.domain().global.set({ ...(h1.domain().global.get()), webhookUrl: 'http://hook.local/x', sortMode: 'asc' })
-    const exported = (await h1.call('market_export')) as any
+    const exported = (await h1.call('market_export', { full: true })) as any
     expect(exported.version).toBe(2)
+    expect(exported.masked).toBe(false)
     expect(exported.watchlist).toHaveLength(1)
     expect(exported.holdings).toHaveLength(1)
+    expect(exported.holdings[0]!.shares).toBe(100)
     expect(exported.settings.webhookUrl).toBe('http://hook.local/x')
     h1.dispose()
 
@@ -713,15 +727,29 @@ describe('导入导出与隐私边界', () => {
     h2.dispose()
   })
 
-  it('行为记录:market_export 无视隐私模式导出金额与 webhookUrl(P1 隐私泄漏证据)', async () => {
+  it('#32 修复回归:默认脱敏导出——金额/份额/成本与 webhookUrl 不进入模型上下文', async () => {
     const h = await setup()
     fetchSinaStocks.mockResolvedValue([sinaQuote('cn_sh:600519', 1500, 1480)])
-    await h.call('holdings_set', { symbol: 'sh600519', shares: 100, costPrice: 1450 })
+    await h.call('watchlist_add', { symbol: 'sh600519', name: '贵州茅台' })
+    await h.call('holdings_set', { symbol: 'sh600519', shares: 100, costPrice: 1450, closed: false })
     await h.domain().global.set({ ...(h.domain().global.get()), webhookUrl: 'http://hook.local/x' })
     // privacy.exposeAmounts 仍为默认 false
     const exported = (await h.call('market_export')) as any
-    expect(exported.holdings[0]!.shares).toBe(100) // 隐私模式下金额仍进入模型上下文
-    expect(exported.settings.webhookUrl).toBe('http://hook.local/x')
+    expect(exported.masked).toBe(true)
+    expect(exported.holdings[0]!.shares).toBeUndefined()
+    expect(exported.holdings[0]!.costPrice).toBeUndefined()
+    expect(exported.holdings[0]!.closed).toBe(false) // 结构信息保留
+    expect(exported.holdings[0]!.updatedAt).toBeTypeOf('string')
+    expect(exported.settings.webhookUrl).toBe('') // 敏感地址脱敏
+    expect(exported.settings.sortMode).toBe('default') // 其余设置照常导出
+    // 脱敏导出仍可安全导入(持仓只剩结构信息)
+    const h2 = await setup()
+    const imp = (await h2.call('market_import', { json: JSON.stringify(exported) })) as any
+    expect(imp.imported.holdings).toBe(1)
+    expect(imp.imported.watchlist).toBe(1)
+    const list = (await h2.call('watchlist_list')) as any[]
+    expect(list[0]!.symbol).toBe('cn_sh:600519')
+    h2.dispose()
     h.dispose()
   })
 })

@@ -91,6 +91,12 @@ export const holdingsItemSchema = z
     name: z.string().optional(),
     profitRate: z.number(),
     isClosed: z.boolean(),
+    /** 计价币种(外币持仓;CNY 市场省略)。#33 修复:此前被 schema 剥离,UI 永远看不到。 */
+    currency: z.enum(['USD', 'HKD', 'CNY']).optional(),
+    /** 汇率(仅 exposeAmounts 时随金额下发)。 */
+    fxRate: z.number().optional(),
+    /** 汇率缺失降级标注:金额未折算(两种模式都可见,百分比不受影响)。 */
+    fxMissing: z.boolean().optional(),
     shares: z.number().optional(),
     amount: z.number().optional(),
     costPrice: z.number().optional(),

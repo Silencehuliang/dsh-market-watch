@@ -17,6 +17,9 @@
 - **外汇行情实机不可用**:新浪 `fx_` 代码大小写敏感(`fx_SUSDCNY` 返回空数据),`toProviderCode`/期货外汇 Provider 统一小写输出
 - **迷你条点击无法打开面板**:客户端调用不存在的 Remote 方法 `ackAlerts`,异常吞掉后 `open()` 不执行、「查看即清未读」从未生效;补全 Remote 契约(runtime/contract/typert/dataAccess)并改为先开面板、ack 异步
 - **K 线详情空数据崩溃**:空 bars 时取色表达式先行求值 `bars[-1].close` 抛 TypeError;增加显式空态(`kline.empty`,中英文案)
+- **(#32)`market_export` 默认脱敏**:此前无视隐私模式整体 dump 持仓金额与 webhook 地址进模型上下文;现默认脱敏(持仓只含结构字段、settings 去 webhook 地址),显式 `full=true` 才完整导出(ADR-0002 修订)
+- **(#33)holdings 契约字段**:`currency`/`fxRate`/`fxMissing` 此前被 remote schema 静默剥离,汇率缺失降级标注与币种标注到不了 UI;schema 补字段,币种在隐私模式也下发;迷你条外币成本未按汇率折算致总收益率失真一并修复(与 portfolio_summary 同口径),汇率缺失显示 `≈` 提示
+- **(#34)北向资金口径**:`market_flow(kind=north)` 此前返回恒为 0 的净流入(2024-08 起停止披露),误导;现返回 `unavailable: true` + 当日总成交额(唯一仍披露口径),新增 `kind=south` 南向港股通净买入(买−卖,不信任数据源占位净额字段)
 
 ### Changed
 

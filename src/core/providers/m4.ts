@@ -26,29 +26,68 @@ export async function fetchSectorFlow(kind: 'sector' | 'concept', limit = 10): P
   }))
 }
 
-/** 沪深港通资金(kamt.rtmin,s2n 最后一行:时间,沪净流入,沪余额,深净流入,深余额,北向合计)。 */
-export async function fetchHsgFlow(): Promise<{
-  time: string
-  shNet: number
-  szNet: number
-  northTotal: number
-}> {
-  const res = await fetch(
-    'https://push2.eastmoney.com/api/qt/kamt.rtmin/get?fields1=f1,f3&fields2=f51,f52,f53,f54,f55,f56',
-    { signal: AbortSignal.timeout(10000) },
-  )
-  if (!res.ok) throw new Error(`hsg http ${res.status}`)
-  const json = (await res.json()) as { data?: { s2n?: string[] } }
-  const lines = json.data?.s2n ?? []
-  const last = lines[lines.length - 1]
-  if (!last) throw new Error('hsg data empty')
-  const f = last.split(',')
+/**
+ * 沪深港通资金(#34 修复:北向净买入自 2024-08 起停止披露)。
+ * kamt 日度接口实测:净额字段(dayNetAmtIn 等)恒为「每日额度」占位值(=420亿×天数),不可用;
+ * 可用的是 buyAmt/sellAmt/buySellAmt(万元)——南向买卖拆分实盘,北向仅总成交额。
+ */
+export interface HsgLeg {
+  dayNetAmtIn: number
+  dayAmtThreshold: number
+  date2?: string
+  buyAmt: number
+  sellAmt: number
+  buySellAmt: number
+}
+
+export interface SouthFlow {
+  date: string
+  /** 南向净买入(亿,CNY)= 港股通(沪+深)买 − 卖。 */
+  netCny: number
+  buyCny: number
+  sellCny: number
+  turnoverCny: number
+}
+
+export interface NorthFlowNote {
+  date: string
+  /** 北向当日总成交额(亿,CNY;买卖合计,唯一仍披露的北向口径)。 */
+  turnoverCny: number
+}
+
+/** kamt 日度 JSON 解析(纯函数,fixture 可测)。 */
+export function parseHsgDaily(json: { data?: Record<string, HsgLeg | undefined> | null }): {
+  south: SouthFlow
+  north: NorthFlowNote
+} {
+  const legs = json.data ?? {}
+  const sh2hk = legs.sh2hk
+  const sz2hk = legs.sz2hk
+  const hk2sh = legs.hk2sh
+  const hk2sz = legs.hk2sz
+  if (!sh2hk || !sz2hk || !hk2sh || !hk2sz) throw new Error('hsg legs missing')
+  const date = sh2hk.date2 ?? ''
+  const yi = (v: number) => v / 1e4 // 万元 → 亿
   return {
-    time: f[0] ?? '',
-    shNet: parseNum(f[1]) / 1e4, // 万 → 亿
-    szNet: parseNum(f[3]) / 1e4,
-    northTotal: parseNum(f[5]) / 1e4,
+    south: {
+      date,
+      netCny: yi(sh2hk.buyAmt - sh2hk.sellAmt + sz2hk.buyAmt - sz2hk.sellAmt),
+      buyCny: yi(sh2hk.buyAmt + sz2hk.buyAmt),
+      sellCny: yi(sh2hk.sellAmt + sz2hk.sellAmt),
+      turnoverCny: yi(sh2hk.buySellAmt + sz2hk.buySellAmt),
+    },
+    north: { date, turnoverCny: yi(hk2sh.buySellAmt + hk2sz.buySellAmt) },
   }
+}
+
+const KAMT_URL =
+  'https://push2.eastmoney.com/api/qt/kamt/get?fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62'
+
+/** 沪深港通日度数据(宿主侧网络)。 */
+export async function fetchHsgDaily(): Promise<{ south: SouthFlow; north: NorthFlowNote }> {
+  const res = await fetch(KAMT_URL, { signal: AbortSignal.timeout(10000) })
+  if (!res.ok) throw new Error(`hsg http ${res.status}`)
+  return parseHsgDaily((await res.json()) as { data?: Record<string, HsgLeg | undefined> })
 }
 
 // ---------- 快讯(FR-NEWS-01,金十单源;选股宝无公开 API) ----------

@@ -27,9 +27,9 @@ function makeData(holdingsItems: unknown[], settings: unknown = {}): MarketWatch
   }
 }
 
-describe('remote 契约漂移验证(行为记录)', () => {
-  it('holdings 远端输出剥离 currency/fxRate/fxMissing(宿主 computeHoldingsView 的降级标注到不了 UI)', async () => {
-    // 这是 index.ts computeHoldingsView(exposeAmounts=true,汇率缺失)的真实输出形态
+describe('remote 契约回归', () => {
+  it('holdings 远端输出保留 currency/fxRate/fxMissing(#33 修复:此前 schema 剥离致 UI 永远看不到)', async () => {
+    // 这是 index.ts computeHoldingsView(exposeAmounts=true + 一个汇率缺失项)的真实输出形态
     const svc = new MarketWatchRuntime(new Context(), makeData([
       {
         symbol: 'us:AAPL.OQ',
@@ -46,18 +46,19 @@ describe('remote 契约漂移验证(行为记录)', () => {
         marketValue: 14400,
       },
       {
-        symbol: 'cn_sh:600519',
-        name: '贵州茅台',
+        symbol: 'us:NVDA.OQ',
+        name: '英伟达',
         profitRate: 3.45,
         isClosed: false,
-        fxMissing: true, // 汇率缺失降级标注(仅在 CNY 时不会出现,此处模拟字段进入宿主视图)
+        currency: 'USD',
+        fxMissing: true, // 汇率缺失降级标注
       },
     ]))
     const result = await svc.getHoldings()
-    // zod holdingsItemSchema 不含这三个字段 → .parse() 静默剥离
-    expect((result.items[0] as any).currency).toBeUndefined()
-    expect((result.items[0] as any).fxRate).toBeUndefined()
-    expect((result.items[1] as any).fxMissing).toBeUndefined()
+    expect(result.items[0]!.currency).toBe('USD')
+    expect(result.items[0]!.fxRate).toBe(7.2)
+    expect(result.items[1]!.currency).toBe('USD')
+    expect(result.items[1]!.fxMissing).toBe(true)
   })
 
   it('settings 远端输出剥离 alertsUnread/webhookUrl(后者符合「仅本地」设计)', async () => {

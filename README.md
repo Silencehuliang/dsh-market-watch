@@ -22,7 +22,7 @@
 | 涨跌提醒 | 价格/涨跌幅穿越阈值触发;**仅开市时段评估**、同一规则 3 分钟节流、宿主侧 5 秒定时器驱动(不依赖 UI 打开);未读角标;可选 Webhook 推送(默认关闭) |
 | 定时简报 | `brief_schedule` 每日盘前 09:15 / 盘后 15:10(Asia/Shanghai)自动触发;休市日按 A 股交易日历自动跳过;盘后简报含持仓盈亏 |
 | 快讯 | 金十快讯列表,支持关键词过滤与 60 秒缓存,由模型解读与自选的关联 |
-| 资金流 | 沪深港通/北向资金、行业板块与概念板块资金流排行(单位:亿) |
+| 资金流 | 南向港股通净买入、北向总成交额(净买入自 2024-08 停止披露,返回 `unavailable` 说明)、行业/概念板块排行(单位:亿) |
 | 分享卡片 | `share_card` 生成 SVG 收益榜,**金额字段无论何种设置都强制隐藏** |
 | 数据迁移 | 自选/分组/持仓/提醒/设置 导出为带版本号的 JSON,跨环境导入 |
 
@@ -50,7 +50,7 @@ dsh plugin --profile web add dsh-plugin-market-watch
 「600519 涨过 1500 提醒我」       → alert_set,开市时段自动评估
 「每天收盘后给我一份简报」        → brief_schedule(默认 15:10)
 「现在有什么快讯,和我自选有关的?」 → market_news_flash + 模型关联解读
-「查一下今天的北向资金」          → market_flow(kind=north)
+「查一下今天的南向资金」          → market_flow(kind=south)
 「我的持仓这周表现如何?」        → holdings_get(隐私模式下只返回百分比)
 ```
 
@@ -69,10 +69,10 @@ dsh plugin --profile web add dsh-plugin-market-watch
 | `market_search` | `q` | 名称/代码模糊搜索,返回市场/类型候选 |
 | `market_kline` | `symbol`, `range?(1w/1m/3m/6m/1y)`, `format?(json/csv)` | 日 K 前复权;csv 格式节省 token |
 | `market_fund_history` | `code`, `days?(默认 20)` | 基金历史净值(单位/累计净值与日涨幅) |
-| `market_flow` | `kind(north/sector/concept)`, `limit?(默认 10)` | 北向资金 / 行业·概念板块资金流排行(亿) |
+| `market_flow` | `kind(north/south/sector/concept)`, `limit?(默认 10)` | north=北向总成交额(净买入已停止披露,`unavailable: true` + 说明)/ south=南向净买入 / 行业·概念板块资金流排行(亿) |
 | `market_news_flash` | `limit?(默认 20)`, `keyword?` | 金十快讯,按时间倒序,60 秒缓存 |
 | `market_fund_rank` | `sort?(day/year)`, `limit?(默认 10)` | 基金排行 |
-| `market_export` / `market_import` | — | 自选/持仓/提醒/设置 带版本号导出导入 |
+| `market_export` / `market_import` | `full?` | 自选/持仓/提醒/设置 带版本号导出导入;**默认脱敏**(金额/份额/成本与 webhook 地址不出模型上下文),`full=true` 才完整导出 |
 | `market_status` | `markets?` | 各市场开收盘状态与下次开盘时间(按交易日历跳过周末/节假日) |
 | `market_diagnostics` | — | 数据源健康诊断:最近错误、最近成功时间、最近/平均延迟、冷却期状态 |
 | `market_watch_hello` | — | 插件自检 |
@@ -127,7 +127,7 @@ dsh plugin --profile web add dsh-plugin-market-watch
 
 ## 隐私与安全
 
-- **隐私边界**:默认只隐藏金额/份额/成本,不隐藏自选标的名单(ADR-0002):隐私模式下 Agent 查询持仓只返回百分比与方向,敏感金额不进入任何模型上下文(含云端);**例外是 `market_export`**:迁移场景显式导出全部数据(含持仓金额与 webhook 地址),不受隐私开关限制——请勿把导出 JSON 提交给不可信的一方;
+- **隐私边界**:默认只隐藏金额/份额/成本,不隐藏自选标的名单(ADR-0002):隐私模式下 Agent 查询持仓只返回百分比与方向,敏感金额不进入任何模型上下文(含云端);`market_export` 同样**默认脱敏**——只有显式传 `full=true`(用户明确要求完整迁移/备份金额)才包含金额与 webhook 地址;
 - `share_card` 金额字段强制隐藏,不受隐私开关影响;
 - Webhook 地址仅本地存储;插件不读取任何宿主凭据/API Key;
 - 出站网络仅限上表行情数据源,仅宿主侧发起。
@@ -162,7 +162,6 @@ dsh plugin --profile web add dsh-plugin-market-watch
 - 免费接口无 SLA,可能限频、改版或随时失效(缓解见「可靠性」);
 - 交易日历为内置 2026 年 A 股节假日表,次年需手动更新;
 - 期货/外汇标的在侧栏归入「其他」分组;
-- **北向资金口径失效**:2024-08 起北向盘中净买入停止披露,`market_flow(kind=north)` 各字段实测恒为 0,待换用可得口径(见 issue);
 - 迷你条的「持仓总收益率」依赖金额计算,默认隐私模式下不显示(百分比-only 数据不足以加权汇总);
 - 免费搜索接口按裸代码/名称匹配:`usAAPL` 这类带市场前缀的查询无结果;
 - 桌面版(Electron)安装链路需 npm 发布后实测;桌面 profile 由应用内置管理,CLI 不直接操作;

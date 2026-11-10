@@ -17,9 +17,9 @@ Data comes from free public endpoints (Sina / Tencent / Eastmoney / Jin10). It m
 - **Alerts** — price / % change threshold crossing; evaluated **only during market hours**, 3-minute per-rule throttle, host-side 5s timer (works without UI); unread badge; optional webhook push (off by default)
 - **Briefings** — `brief_schedule` daily pre-open 09:15 / post-close 15:10 (Asia/Shanghai); closed days auto-skipped via the CN trading calendar
 - **News** — Jin10 flash list with keyword filter and 60s cache, interpreted by the model against your watchlist
-- **Money flow** — HK Stock Connect / northbound, sector & concept flow rankings
+- **Money flow** — southbound Stock Connect net buy, northbound total turnover (net-buy disclosure ended 2024-08 → structured `unavailable`), sector & concept rankings
 - **Share card** — SVG P&L ranking with amounts **always hidden**
-- **Import/export** — versioned JSON of watchlist/holdings/alerts/settings
+- **Import/export** — versioned JSON of watchlist/holdings/alerts/settings; **masked by default** (amounts/shares/cost & webhook URL never enter model context unless `full: true`)
 
 Engineering notes: UI polling pauses when the page is hidden; all network requests happen host-side (Node) only; all charts are zero-dependency SVG.
 
@@ -38,7 +38,7 @@ Then: add watchlist items via search or a chat command, enter positions, and say
 
 All outputs carry `asOf` / `source` / `delayed` markers.
 
-- **market_**: `market_quote` (batch quotes incl. bid1/ask1/orderBookRatio), `market_fund_estimate`, `market_search`, `market_kline` (qfq, json/csv), `market_fund_history`, `market_flow` (north/sector/concept), `market_news_flash`, `market_fund_rank`, `market_status` (per-market session status + next open), `market_diagnostics` (source health: last error/latency/cooldown), `market_export` / `market_import`, `market_watch_hello`
+- **market_**: `market_quote` (batch quotes incl. bid1/ask1/orderBookRatio), `market_fund_estimate`, `market_search`, `market_kline` (qfq, json/csv), `market_fund_history`, `market_flow` (north=total-turnover note / south=net buy / sector / concept), `market_news_flash`, `market_fund_rank`, `market_status` (per-market session status + next open), `market_diagnostics` (source health: last error/latency/cooldown), `market_export` (masked unless `full: true`) / `market_import`, `market_watch_hello`
 - **watchlist_**: `watchlist_add` / `watchlist_list` / `watchlist_remove` (idempotent)
 - **holdings_**: `holdings_set` (fund amount→shares reverse-calc via cost NAV), `holdings_get` (privacy mode returns percentages only), `portfolio_summary` (aggregate P/L, distribution, max swing — privacy-aware)
 - **alert_**: `alert_set` / `alert_list` / `alert_delete` / `alert_ack`
@@ -65,14 +65,13 @@ Single reliable source + cache fallback (ADR-0001): on failure (HTTP 429/403, ti
 
 ## Privacy
 
-Amounts/shares/cost are hidden from model context by default; watchlist names are not hidden (ADR-0002). The share card hides amounts unconditionally. **Exception: `market_export`** dumps full data (incl. amounts and the webhook URL) for migration regardless of the privacy switch — do not hand the exported JSON to untrusted parties. The plugin reads no host credentials; outbound requests are limited to the data sources above, host-side only.
+Amounts/shares/cost are hidden from model context by default; watchlist names are not hidden (ADR-0002). The share card hides amounts unconditionally. `market_export` is **masked by default**; full data (incl. amounts and the webhook URL) requires the explicit `full: true` flag — pass it only when the user explicitly asks to migrate/backup amounts. The plugin reads no host credentials; outbound requests are limited to the data sources above, host-side only.
 
 ## Known limitations
 
 - Free endpoints have no SLA and may rate-limit, change, or disappear (see Reliability);
 - Trading calendar is a built-in 2026 CN holiday table, needs a yearly update;
 - Futures/FX symbols land in the “Other” group;
-- **Northbound flow is defunct**: intraday northbound net-buy disclosure ended 2024-08; `market_flow(kind=north)` fields are always 0 in practice;
 - The mini bar's total portfolio return needs amounts to weight, so it stays hidden under the default privacy mode;
 - Free search matches bare codes/names: queries like `usAAPL` (market-prefixed) return nothing.
 

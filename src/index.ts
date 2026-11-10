@@ -8,7 +8,7 @@ import { fetchSinaStocks } from './core/providers/sina.js'
 import { fetchTencentQuotes } from './core/providers/tencent.js'
 import { fetchFuturesFxQuotes, fetchFxRates } from './core/providers/futures-fx.js'
 import { fetchFundHistory, fetchKline, rangeToDays } from './core/providers/kline.js'
-import { fetchFundRank, fetchHsgFlow, fetchNewsFlash, fetchSectorFlow } from './core/providers/m4.js'
+import { fetchFundRank, fetchHsgDaily, fetchNewsFlash, fetchSectorFlow } from './core/providers/m4.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
 import { isMarketOpenNow, isTradingDay, marketStatus, nextMarketOpen } from './core/calendar.js'
@@ -324,6 +324,8 @@ export function apply(ctx: Context) {
           name: quote?.name,
           profitRate: r.profitRate,
           isClosed: r.isClosed,
+          // 币种不是敏感量,两种模式都下发(UI 显示 USD/HKD 标注,#33 修复:此前被 remote schema 剥离)
+          ...(currency !== 'CNY' ? { currency } : {}),
           ...(currency !== 'CNY' && rate === null ? { fxMissing: true } : {}), // 汇率缺失降级标注(审查修复)
         }
         if (!expose) return base
@@ -871,18 +873,34 @@ export function apply(ctx: Context) {
     defineTool({
       name: 'market_flow',
       description:
-        '资金流向:north=沪深港通/北向资金,sector=行业板块资金流排行,concept=概念板块资金流排行(单位:亿)。数据来自公开接口,不构成投资建议。',
+        '资金流向:north=北向资金(净买入自2024-08停止披露,返回 unavailable=true、当日总成交额与说明),south=南向港股通净买入(亿),sector=行业板块资金流排行,concept=概念板块资金流排行(单位:亿)。数据来自公开接口,不构成投资建议。',
       parameters: {
-        kind: { type: 'string', required: true, description: 'north / sector / concept' },
+        kind: { type: 'string', required: true, description: 'north / south / sector / concept' },
         limit: { type: 'number', description: '排行条数(默认 10)' },
       },
       output: jsonOutput,
       async execute(args: { kind: string; limit?: number }) {
-        if (args.kind === 'north') return toJson(await fetchHsgFlow())
+        if (args.kind === 'north' || args.kind === 'south') {
+          const d = await fetchHsgDaily()
+          if (args.kind === 'north') {
+            // #34 修复:此前返回恒为 0 的净流入,模型会向用户转述「北向净流入 0 亿」——误导
+            return toJson({
+              kind: 'north',
+              date: d.north.date,
+              unavailable: true,
+              netBuyCny: null,
+              totalTurnoverCny: d.north.turnoverCny,
+              reason: '北向资金净买入自2024-08起停止披露,数据源净额字段恒为占位值;仅当日总成交额(买卖合计)仍披露',
+              asOf: d.north.date,
+              source: 'eastmoney',
+            })
+          }
+          return toJson({ kind: 'south', ...d.south, asOf: d.south.date, source: 'eastmoney' })
+        }
         if (args.kind === 'sector' || args.kind === 'concept') {
           return toJson({ kind: args.kind, items: await fetchSectorFlow(args.kind, args.limit ?? 10) })
         }
-        return toJson({ error: 'kind must be north/sector/concept' })
+        return toJson({ error: 'kind must be north/south/sector/concept' })
       },
     }),
   )
@@ -1107,18 +1125,30 @@ export function apply(ctx: Context) {
   ctx.tools.register(
     defineTool({
       name: 'market_export',
-      description: '导出自选/分组/持仓/设置为 JSON(带版本号),可用于备份或迁移(FR-WL-07)。',
-      parameters: {},
+      description:
+        '导出自选/分组/持仓/设置为 JSON(带版本号),可用于备份或迁移(FR-WL-07)。默认脱敏:持仓金额/份额/成本与 webhook 地址不下发到模型上下文(ADR-0002);仅当用户明确要求完整迁移/备份金额时才传 full=true。',
+      parameters: {
+        full: {
+          type: 'boolean',
+          description:
+            '完整导出(含持仓份额/金额/成本与 webhook 地址)。默认 false=脱敏导出;仅应在用户明确要求导出金额数据时使用。',
+        },
+      },
       output: jsonOutput,
-      async execute() {
+      async execute(args: { full?: boolean }) {
         if (!domain) return toJson({ error: 'storage not ready' })
+        const full = args.full === true
         return toJson({
           version: 2,
+          masked: !full, // 脱敏标记:导入方据此知道持仓只有 closed/updatedAt 结构信息
           exportedAt: new Date().toISOString(),
           watchlist: Array.from(domain.table('watchlist').entries()).map(([k, v]) => ({ key: k, ...v })),
           groups: Array.from(domain.table('groups').entries()).map(([k, v]) => ({ key: k, ...v })),
-          holdings: Array.from(domain.table('holdings').entries()).map(([k, v]) => ({ key: k, ...v })),
-          settings: domain.global.get(),
+          // #32 修复:此前无视隐私模式整体 dump(金额+webhookUrl 进模型上下文);现默认脱敏
+          holdings: Array.from(domain.table('holdings').entries()).map(([k, v]) =>
+            full ? { key: k, ...v } : { key: k, closed: v.closed, updatedAt: v.updatedAt },
+          ),
+          settings: full ? domain.global.get() : { ...domain.global.get(), webhookUrl: '' },
         })
       },
     }),
