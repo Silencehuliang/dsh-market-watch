@@ -153,7 +153,7 @@
 | 天天基金估值 | `https://fundgz.1234567.com.cn/js/110022.js` | ❌ **已下架**:HTTP/HTTPS/带 Referer/带 rt 均返回「页面未找到」 |
 | 东方财富基金详情 | `https://fund.eastmoney.com/pingzhongdata/110022.js` | ✅ 有效,含名称/代码/费率,但**非实时估值** |
 
-**结论**:leek-fund 使用的天天基金 `fundgz` 实时估值接口已失效,需另寻基金估值替代源(FR-DATA 的「多源/单源兜底」风险实锤)。基金详情可用东财 `pingzhongdata`。
+**结论**:天天基金 `fundgz` 实时估值接口(社区插件曾采用)已失效,需另寻基金估值替代源(FR-DATA 的「多源/单源兜底」风险实锤)。基金详情可用东财 `pingzhongdata`。
 
 ### 基金估值替代源(已实测)
 

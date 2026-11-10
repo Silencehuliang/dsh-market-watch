@@ -1,10 +1,10 @@
 ## Problem Statement
 
-开发者在使用 DeepSeek Harness(dsh)编码时,无法低打扰地查看行情与持仓。VSCode 插件「韭菜盒子」(leek-fund,约 3.7k star)证明了「在开发工具里常驻看盘」的稳定需求,但 dsh 生态现有插件(dsh-plugin-astock / dsh-plugin-aportfolio / dsh-fund-research)未覆盖:基金盘中估值、港股/美股/期货/外汇、常驻行情面板、价格提醒、定时简报。
+开发者在使用 DeepSeek Harness(dsh)编码时,无法低打扰地查看行情与持仓。VSCode 生态的看盘类插件证明了「在开发工具里常驻看盘」的稳定需求,但 dsh 生态现有插件(dsh-plugin-astock / dsh-plugin-aportfolio / dsh-fund-research)未覆盖:基金盘中估值、港股/美股/期货/外汇、常驻行情面板、价格提醒、定时简报。
 
 ## Solution
 
-做一个 dsh 插件 `dsh-plugin-market-watch`,复刻韭菜盒子核心体验(自选行情常驻、持仓盈亏、涨跌提醒、详情走势),并把同一份行情数据同时做成 Agent 可调用的工具,利用 dsh 自带的 Agent 能力做差异化(自然语言问自选、定时盘前盘后简报、模型解读快讯)。数据层采用「单源可靠 + 缓存兜底 + 源健康监控」以降低免费接口失效的影响。
+做一个 dsh 插件 `dsh-plugin-market-watch`,提供核心看盘体验(自选行情常驻、持仓盈亏、涨跌提醒、详情走势),并把同一份行情数据同时做成 Agent 可调用的工具,利用 dsh 自带的 Agent 能力做差异化(自然语言问自选、定时盘前盘后简报、模型解读快讯)。数据层采用「单源可靠 + 缓存兜底 + 源健康监控」以降低免费接口失效的影响。
 
 ## User Stories
 
@@ -41,7 +41,7 @@
 - **分组**:内置分组 id 映射 market,新增标的自定落入内置分组,自定义分组可跨市场。
 - **Agent 工具**:17 个,按领域前缀 market_/watchlist_/holdings_/alert_/brief_,输出含 asOf/source/delayed。
 - **提醒**:宿主侧定时器驱动,禁用 ctx.schedule 轮询;穿越判定 + 3 分钟节流;通知可达性列 M0 验证。
-- **公式**:对齐 leek-fund 源码(caculateEarnings),盈亏/收益率/份额反推按附录 B。
+- **公式**:盈亏/收益率/份额反推按 SRS 附录 B。
 - **图表**:零依赖 SVG 自绘。
 - **涨跌颜色**:riseColor 单开关(红涨绿跌可反转)。
 - **术语/决策**:根 GLOSSARY.md + docs/adr/ 为单一来源。
