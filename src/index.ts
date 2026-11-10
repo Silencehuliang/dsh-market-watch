@@ -483,6 +483,7 @@ export function apply(ctx: Context) {
     createGroup: (name) => createGroupCore(name),
     deleteGroup: (groupId) => deleteGroupCore(groupId),
     updateSettings: (patch) => updateSettingsCore(patch),
+    ackAlerts: async () => ({ ok: await setGlobal({ alertsUnread: 0 }), symbol: '' }),
     getKline: async (symbolRaw, days) => {
       const symbolId = normalizeSymbol(symbolRaw)
       return { symbol: symbolId, bars: await fetchKline(symbolId, days) }

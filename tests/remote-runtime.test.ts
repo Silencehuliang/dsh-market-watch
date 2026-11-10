@@ -56,7 +56,11 @@ function makeData(overrides: Partial<MarketWatchDataAccess> = {}): MarketWatchDa
     moveToGroup: async () => ({ ok: true, symbol: 'cn_sh:600519' }),
     setSortMode: async () => ({ ok: true, symbol: '' }),
     createGroup: async () => ({ ok: true, symbol: 'custom:测试' }),
+    deleteGroup: async () => ({ ok: true, symbol: '' }),
     updateSettings: async () => ({ ok: true, symbol: '' }),
+    ackAlerts: async () => ({ ok: true, symbol: '' }),
+    getKline: async () => ({ symbol: 'cn_sh:600519', bars: [] }),
+    getFundHistory: async () => ({ code: '110022', list: [] }),
     ...overrides,
   }
 }

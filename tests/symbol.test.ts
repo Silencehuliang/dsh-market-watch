@@ -62,3 +62,10 @@ describe('parseSymbol', () => {
     expect(parseSymbol('hk:00700')).toEqual({ market: 'hk', code: '00700' })
   })
 })
+
+describe('toProviderCode(新浪 fx 代码回归)', () => {
+  it('fx 代码输出小写(回归:新浪 fx_ 大小写敏感,fx_SUSDCNY 返回空数据)', () => {
+    expect(toProviderCode('fx:SUSDCNY' as never)).toBe('fx_susdcny')
+    expect(toProviderCode('fx:shkdcny' as never)).toBe('fx_shkdcny')
+  })
+})

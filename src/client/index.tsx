@@ -94,11 +94,12 @@ function MiniBar(props: any) {
 
     const open = () => {
     try {
-    props.ackAlerts?.() // 查看即清未读(审查修复:alertsUnread 只增不清)
     props.open?.()
     } catch {
     /* 无会话时 openTab 静默失败(见 verification.md §10) */
     }
+    // 查看即清未读(审查修复:alertsUnread 只增不清);异步执行且不阻塞打开面板
+    void Promise.resolve(props.ackAlerts?.()).catch(() => {})
     }
 
   const pill: React.CSSProperties = {
@@ -227,8 +228,9 @@ function DetailView(props: any) {
     <div style={{ padding: '4px 10px 8px' }}>
       {bars === null ? (
         <span style={{ fontSize: 11, opacity: 0.6 }}>{props.t('loading')}</span>
-      ) : err ? (
-        <span style={{ fontSize: 11, opacity: 0.7 }}>{err}</span>
+      ) : bars.length === 0 ? (
+        // 实测修复:空 bars 时取色表达式先行求值会 TypeError(bars[-1].close),改为显式空态
+        <span style={{ fontSize: 11, opacity: 0.6 }}>{props.t('kline.empty')}</span>
       ) : (
         <svg viewBox="0 0 200 60" width="100%" height="60">
           {line(bars.map((b) => b.close), 200, 56, pctColor(bars[bars.length - 1]!.close - bars[0]!.close, 'red'))}

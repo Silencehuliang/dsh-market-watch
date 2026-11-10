@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchFuturesFxQuotes, parseCnFuturesQuote, parseFxQuote, parseIntlFuturesQuote } from '../src/core/providers/futures-fx'
 
 /** 2026-11-10 实测原始行。 */
@@ -42,5 +42,22 @@ describe('parseFxQuote(外汇)', () => {
 describe('fetchFuturesFxQuotes(路由)', () => {
   it('不支持的市场返回空', async () => {
     expect(await fetchFuturesFxQuotes(['cn_sh:600519' as never])).toEqual([])
+  })
+
+  it('批量装配正确解析(回归:实机发现切行 body 带前导引号致全部期货行情被丢弃)', async () => {
+    const raw = `${NF_LINE}\n${HF_LINE}\n`
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(raw).buffer as ArrayBuffer,
+    })))
+    try {
+      const out = await fetchFuturesFxQuotes(['fut_cn:IF0', 'fut_gl:OIL'] as never)
+      expect(out).toHaveLength(2)
+      expect(out[0]!.symbol).toBe('fut_cn:IF0')
+      expect(out[0]!.price).toBeCloseTo(4045)
+      expect(out[1]!.price).toBeCloseTo(91.51)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

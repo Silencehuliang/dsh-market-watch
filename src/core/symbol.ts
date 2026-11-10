@@ -89,7 +89,8 @@ export function toProviderCode(symbol: SymbolId): string {
     case 'fut_gl':
       return `hf_${code}`
     case 'fx':
-      return `fx_${code}`
+      // 实测修复:新浪 fx_ 代码大小写敏感(fx_SUSDCNY → 空数据),统一输出小写
+      return `fx_${code.toLowerCase()}`
   }
 }
 

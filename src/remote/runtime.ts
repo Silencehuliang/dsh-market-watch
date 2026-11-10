@@ -37,6 +37,7 @@ export interface MarketWatchDataAccess {
   createGroup(name: string): Promise<unknown>
   deleteGroup(groupId: string): Promise<unknown>
   updateSettings(patch: Record<string, unknown>): Promise<unknown>
+  ackAlerts(): Promise<unknown>
   getKline(symbol: string, days: number): Promise<unknown>
   getFundHistory(code: string, days: number): Promise<unknown>
 }
@@ -142,5 +143,12 @@ export class MarketWatchRuntime extends TypertRemoteService {
   async updateSettings(patch: Record<string, unknown>, signal?: AbortSignal): Promise<OpResult> {
     void signal
     return opResultSchema.parse(await this.data.updateSettings(patch))
+  }
+
+  /** 清除提醒未读计数(迷你条查看即清;实测修复:MiniBar ackAlerts 此前无对应远端方法)。 */
+  @Remote
+  async ackAlerts(signal?: AbortSignal): Promise<OpResult> {
+    void signal
+    return opResultSchema.parse(await this.data.ackAlerts())
   }
 }

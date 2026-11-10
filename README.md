@@ -1,6 +1,6 @@
 # dsh-market-watch
 
-**DeepSeek Harness(dsh)的 Agent 增强型盯盘插件** —— 自选行情常驻侧栏、持仓盈亏账本、涨跌提醒、每日定时简报;同一份数据以 25 个 Agent 工具的形式暴露给模型。
+**DeepSeek Harness(dsh)的 Agent 增强型盯盘插件** —— 自选行情常驻侧栏、持仓盈亏账本、涨跌提醒、每日定时简报;同一份数据以 26 个 Agent 工具的形式暴露给模型。
 
 > 定位一句话:**不做最重的 UI,做最懂 Agent 什么时候该说话的那一个。**
 > 差异化来自 Agent 主动性:每日自动简报覆盖整个自选/持仓组合,快讯自动关联你的自选标的,而面板本身保持克制——模型替你先看一遍,而不是你让 Agent 看。
@@ -54,9 +54,9 @@ dsh plugin --profile web add dsh-plugin-market-watch
 「我的持仓这周表现如何?」        → holdings_get(隐私模式下只返回百分比)
 ```
 
-标的代码规范为 `{market}:{code}`(如 `cn_sh:600519`、`hk:00700`、`us:AAPL`、`fund:110022`、`fut_cn:IF0`、`fx:susdcny`);对 Agent 说自然语言代码即可,搜索会自动纠正(实测 `usAAPL` → `us:AAPL.OQ`)。
+标的代码规范为 `{market}:{code}`(如 `cn_sh:600519`、`hk:00700`、`us:AAPL.OQ`、`fund:110022`、`fut_cn:IF0`、`fx:susdcny`);对 Agent 说自然语言代码即可,搜索按裸代码/名称匹配(美股输入裸代码如 `AAPL` 可搜到,`us` 前缀前缀查询无效)。
 
-## Agent 工具参考(25 个)
+## Agent 工具参考(26 个)
 
 所有输出统一含 `asOf` / `source` / `delayed` 标注;延迟数据不冒充实时效;全部工具声明「不构成投资建议」。
 
@@ -84,6 +84,7 @@ dsh plugin --profile web add dsh-plugin-market-watch
 | `watchlist_add` / `watchlist_list` / `watchlist_remove` | 自选增删查,重复添加幂等 |
 | `holdings_set` | 录入持仓:股票成本价/数量/清仓;基金份额或金额(只有金额时按成本净值反推份额) |
 | `holdings_get` | 持仓与盈亏查询(**默认隐私模式只返回百分比**,金额不出模型上下文) |
+| `portfolio_summary` | 组合汇总:当日/累计盈亏、总收益率、涨跌分布、最大波动标的(受隐私模式限制) |
 
 ### alert_ / brief_ — 提醒与简报
 
@@ -120,13 +121,13 @@ dsh plugin --profile web add dsh-plugin-market-watch
 
 可靠性模型(**单源可靠 + 缓存兜底**,ADR-0001):不堆砌多源适配器,可靠性来自——
 
-- 每源限频(默认 ≤ 5 req/s)+ HTTP 429/403/解析异常时指数退避与冷却期;
+- 主源失败(HTTP 429/403、超时、解析异常)时进入 60 秒冷却期,期间直接读缓存不再请求;
 - 主源失败时返回过期缓存并标注 `stale`,UI 标注「已过期/估值/已收盘」,不被延迟数据误导;
 - 休市市场不发高频轮询(FR-DATA-07):内置 2026 年 A 股节假日表 + 行情时间戳纠正,节假日/午休/收盘后自动降频。
 
 ## 隐私与安全
 
-- **默认只隐藏金额/份额/成本,不隐藏自选标的名单**(ADR-0002):隐私模式下 Agent 查询持仓只返回百分比与方向,敏感金额不进入任何模型上下文(含云端);
+- **隐私边界**:默认只隐藏金额/份额/成本,不隐藏自选标的名单(ADR-0002):隐私模式下 Agent 查询持仓只返回百分比与方向,敏感金额不进入任何模型上下文(含云端);**例外是 `market_export`**:迁移场景显式导出全部数据(含持仓金额与 webhook 地址),不受隐私开关限制——请勿把导出 JSON 提交给不可信的一方;
 - `share_card` 金额字段强制隐藏,不受隐私开关影响;
 - Webhook 地址仅本地存储;插件不读取任何宿主凭据/API Key;
 - 出站网络仅限上表行情数据源,仅宿主侧发起。
@@ -161,6 +162,9 @@ dsh plugin --profile web add dsh-plugin-market-watch
 - 免费接口无 SLA,可能限频、改版或随时失效(缓解见「可靠性」);
 - 交易日历为内置 2026 年 A 股节假日表,次年需手动更新;
 - 期货/外汇标的在侧栏归入「其他」分组;
+- **北向资金口径失效**:2024-08 起北向盘中净买入停止披露,`market_flow(kind=north)` 各字段实测恒为 0,待换用可得口径(见 issue);
+- 迷你条的「持仓总收益率」依赖金额计算,默认隐私模式下不显示(百分比-only 数据不足以加权汇总);
+- 免费搜索接口按裸代码/名称匹配:`usAAPL` 这类带市场前缀的查询无结果;
 - 桌面版(Electron)安装链路需 npm 发布后实测;桌面 profile 由应用内置管理,CLI 不直接操作;
 - 不做:交易下单、券商接入、量化回测、买卖建议、数字货币视图、移动端。
 
@@ -172,8 +176,9 @@ dsh plugin --profile web add dsh-plugin-market-watch
 
 ```bash
 npm install
-npm test          # vitest,120 个用例;Provider 全部 fixture 化,CI 不联网
+npm test          # vitest,190+ 用例(含离线集成测试);Provider 全部 fixture 化,CI 不联网
 npm run build     # esbuild bundle + tsc
+MW_LIVE=1 npx vitest run tests/live   # 实机测试:真实数据源端到端验证
 
 # 本地加载到 dsh web(无需发布)
 dsh --profile web --patch ./cordis.patch.yml

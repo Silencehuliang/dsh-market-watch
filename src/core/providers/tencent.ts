@@ -11,7 +11,12 @@ export function toTencentCodes(symbols: SymbolId[]): string {
   return symbols
     .map((s) => {
       const [market, code] = s.split(':') as [string, string]
-      if (market === 'hk' || market === 'us') return `${market}${code}`
+      if (market === 'hk') return `hk${code}`
+      if (market === 'us') {
+        // 实测修复:搜索产出含交易所后缀(us:AAPL.OQ/us:BRK.B.N),而 qt.gtimg.cn 只认无后缀代码
+        // (usAAPL ✓ / usAAPL.OQ → pv_none_match);类股分隔符如 BRK.B 中的点必须保留
+        return `us${code.replace(/\.(OQ|N|A)$/i, '')}`
+      }
       throw new Error(`tencent provider does not support market: ${market}`)
     })
     .join(',')

@@ -10,6 +10,19 @@
 - 桌面版(Electron)npm 安装链路实测
 - 2027 年 A 股节假日表更新
 
+### Fixed(全面评审 + 实机测试发现,均含回归测试)
+
+- **期货/外汇行情实机不可用**:`fetchFuturesFxQuotes` 切行 body 携带前导引号未被剥离,首字段解析 NaN,所有 nf_/hf_ 行情被静默丢弃;`csv()` 兼容完整行与切行两种形态
+- **美股行情实机不可用**:搜索产出含交易所后缀的 `us:AAPL.OQ`,而 `qt.gtimg.cn` 只认无后缀代码(`usAAPL.OQ` → `pv_none_match`);`toTencentCodes` 现剥离 `.OQ/.N/.A` 后缀(类股分隔点如 `BRK.B` 保留)
+- **外汇行情实机不可用**:新浪 `fx_` 代码大小写敏感(`fx_SUSDCNY` 返回空数据),`toProviderCode`/期货外汇 Provider 统一小写输出
+- **迷你条点击无法打开面板**:客户端调用不存在的 Remote 方法 `ackAlerts`,异常吞掉后 `open()` 不执行、「查看即清未读」从未生效;补全 Remote 契约(runtime/contract/typert/dataAccess)并改为先开面板、ack 异步
+- **K 线详情空数据崩溃**:空 bars 时取色表达式先行求值 `bars[-1].close` 抛 TypeError;增加显式空态(`kline.empty`,中英文案)
+
+### Changed
+
+- 测试:新增离线集成测试(真实 `apply(ctx)` 全链路 33 例)、Remote 契约测试、实机测试套件(`MW_LIVE=1 npx vitest run tests/live`,24 例);单测 120 → 190+
+- 文档:README/README.en 与实测对齐(工具数 26、可靠性口径改为 60s 冷却、北向资金口径失效、`market_export` 隐私例外、搜索裸代码说明);评审未修复项见 issues #32–#38
+
 ## [0.1.0] - 2026-11-10
 
 首个公开版本。里程碑 M0–M4 全部交付,实机验证记录见 `docs/verification.md`。

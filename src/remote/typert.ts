@@ -91,6 +91,11 @@ export const TYPERT_MANIFEST: TypertContribution = {
             signature:
               'updateSettings(patch: Record<string, unknown>, signal?: AbortSignal): Promise<OpResult>',
           },
+          {
+            kind: 'method',
+            name: 'ackAlerts',
+            signature: 'ackAlerts(signal?: AbortSignal): Promise<OpResult>',
+          },
         ],
         types: [],
       },

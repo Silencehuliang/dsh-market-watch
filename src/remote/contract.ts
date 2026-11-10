@@ -299,4 +299,14 @@ export const MARKET_WATCH_INVOCATIONS: readonly InvocationDescriptor[] = [
     cancellation: { parameter: 'signal' },
     result: resultOf(`${PKG}#OpResult`, opResultSchema),
   },
+  {
+    id: `${PKG}#market-watch/ackAlerts`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'ackAlerts',
+    invocation: { kind: 'direct' },
+    parameters: [],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#OpResult`, opResultSchema),
+  },
 ]

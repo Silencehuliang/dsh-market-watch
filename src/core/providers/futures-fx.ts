@@ -7,7 +7,9 @@
 import type { Quote, SymbolId } from '../types.js'
 import { fetchGb18030, parseNum } from './http.js'
 
-const csv = (raw: string): string[] => raw.replace(/^var\s+hq_str_\w+="|";?\s*$/g, '').split(',')
+// 兼容两种输入:完整行(`var hq_str_hf_CL="…";`)与 fetchFuturesFxQuotes 切出的 body(`"…";`)——
+// 实测修复:body 形态此前前导引号未剥离,首字段解析 NaN 导致全部期货行情被丢弃(实机测试发现)
+const csv = (raw: string): string[] => raw.replace(/^(var\s+hq_str_\w+=)?"|";?\s*$/g, '').split(',')
 
 /** 国内期货(nf_):昨收 = 昨结算价。 */
 export function parseCnFuturesQuote(symbol: SymbolId, raw: string): Quote | null {
@@ -90,7 +92,9 @@ export async function fetchFuturesFxQuotes(symbols: SymbolId[]): Promise<Quote[]
     .map((s) => {
       const kind = futuresFxKind(s)
       const code = s.split(':')[1]
-      return { s, raw: `${kind}_${code}`, kind }
+      // 实测修复:新浪 fx_ 代码大小写敏感,统一小写(nf_/hf_ 本为大写不受影响)
+      const raw = kind === 'fx' ? `fx_${(code ?? '').toLowerCase()}` : `${kind}_${code}`
+      return { s, raw, kind }
     })
     .filter((x) => x.kind !== null)
   if (codes.length === 0) return []

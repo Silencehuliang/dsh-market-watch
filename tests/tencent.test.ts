@@ -11,6 +11,11 @@ describe('toTencentCodes', () => {
   it('hk:00700 → hk00700;us:AAPL → usAAPL', () => {
     expect(toTencentCodes(['hk:00700', 'us:AAPL' as never])).toBe('hk00700,usAAPL')
   })
+  it('美股剥离交易所后缀(回归:实机发现搜索产出的 us:AAPL.OQ 致 pv_none_match)', () => {
+    expect(toTencentCodes(['us:AAPL.OQ' as never])).toBe('usAAPL')
+    expect(toTencentCodes(['us:BRK.B.N' as never])).toBe('usBRK.B') // 类股点保留,仅去交易所后缀
+    expect(toTencentCodes(['us:BRK.B' as never])).toBe('usBRK.B')
+  })
   it('不支持的 market 抛错', () => {
     expect(() => toTencentCodes(['cn_sh:600519' as never])).toThrow()
   })
@@ -60,5 +65,11 @@ describe('parseTencentBatch', () => {
     const out = parseTencentBatch(['hk:00700', 'us:AAPL' as never], raw)
     expect(out).toHaveLength(2)
     expect(out.map((q) => q.symbol)).toEqual(['hk:00700', 'us:AAPL'])
+  })
+  it('含交易所后缀的请求符号能在返回行中定位(回归:搜索 → 行情链路)', () => {
+    const out = parseTencentBatch(['us:AAPL.OQ' as never], US_LINE)
+    expect(out).toHaveLength(1)
+    expect(out[0]!.symbol).toBe('us:AAPL.OQ')
+    expect(out[0]!.currency).toBe('USD')
   })
 })

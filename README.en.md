@@ -1,6 +1,6 @@
 # dsh-market-watch
 
-**Agent-enhanced market watch plugin for DeepSeek Harness (dsh)** — persistent watchlist sidebar, portfolio P&L ledger, price alerts, and daily scheduled briefings; the same data is exposed to the model as 25 agent tools.
+**Agent-enhanced market watch plugin for DeepSeek Harness (dsh)** — persistent watchlist sidebar, portfolio P&L ledger, price alerts, and daily scheduled briefings; the same data is exposed to the model as 26 agent tools.
 
 > Positioning: not the heaviest UI, but the one that best knows *when the agent should speak* — daily automatic briefings across your whole watchlist/portfolio, news flashes correlated with your holdings, and a deliberately restrained panel.
 
@@ -34,13 +34,13 @@ dsh plugin --profile web add dsh-plugin-market-watch
 
 Then: add watchlist items via search or a chat command, enter positions, and say “每天收盘后给我一份简报” to create the daily briefing.
 
-## Agent tools (25)
+## Agent tools (26)
 
 All outputs carry `asOf` / `source` / `delayed` markers.
 
 - **market_**: `market_quote` (batch quotes incl. bid1/ask1/orderBookRatio), `market_fund_estimate`, `market_search`, `market_kline` (qfq, json/csv), `market_fund_history`, `market_flow` (north/sector/concept), `market_news_flash`, `market_fund_rank`, `market_status` (per-market session status + next open), `market_diagnostics` (source health: last error/latency/cooldown), `market_export` / `market_import`, `market_watch_hello`
 - **watchlist_**: `watchlist_add` / `watchlist_list` / `watchlist_remove` (idempotent)
-- **holdings_**: `holdings_set` (fund amount→shares reverse-calc via cost NAV), `holdings_get` (privacy mode returns percentages only)
+- **holdings_**: `holdings_set` (fund amount→shares reverse-calc via cost NAV), `holdings_get` (privacy mode returns percentages only), `portfolio_summary` (aggregate P/L, distribution, max swing — privacy-aware)
 - **alert_**: `alert_set` / `alert_list` / `alert_delete` / `alert_ack`
 - **brief_**: `brief_generate` (pre_open/post_close, closed-day short-circuit), `brief_schedule` (via `ctx.schedule`, bound to the creating session)
 - **share_card**: SVG earnings ranking (percentages only)
@@ -61,11 +61,20 @@ Symbols use `{market}:{code}` — e.g. `cn_sh:600519`, `hk:00700`, `us:AAPL`, `f
 
 ## Reliability
 
-Single reliable source + cache fallback (ADR-0001): per-source rate limit (≤5 req/s) with exponential backoff and cooldown; on failure, stale cached values are served and clearly marked (`stale`); closed markets trigger no high-frequency polling (built-in 2026 CN holiday table).
+Single reliable source + cache fallback (ADR-0001): on failure (HTTP 429/403, timeout, parse errors) the source enters a flat 60s cooldown during which only cache is served; stale cached values are served and clearly marked (`stale`); closed markets trigger no high-frequency polling (built-in 2026 CN holiday table).
 
 ## Privacy
 
-Amounts/shares/cost are hidden from model context by default; watchlist names are not hidden (ADR-0002). The share card hides amounts unconditionally. The plugin reads no host credentials; outbound requests are limited to the data sources above, host-side only.
+Amounts/shares/cost are hidden from model context by default; watchlist names are not hidden (ADR-0002). The share card hides amounts unconditionally. **Exception: `market_export`** dumps full data (incl. amounts and the webhook URL) for migration regardless of the privacy switch — do not hand the exported JSON to untrusted parties. The plugin reads no host credentials; outbound requests are limited to the data sources above, host-side only.
+
+## Known limitations
+
+- Free endpoints have no SLA and may rate-limit, change, or disappear (see Reliability);
+- Trading calendar is a built-in 2026 CN holiday table, needs a yearly update;
+- Futures/FX symbols land in the “Other” group;
+- **Northbound flow is defunct**: intraday northbound net-buy disclosure ended 2024-08; `market_flow(kind=north)` fields are always 0 in practice;
+- The mini bar's total portfolio return needs amounts to weight, so it stays hidden under the default privacy mode;
+- Free search matches bare codes/names: queries like `usAAPL` (market-prefixed) return nothing.
 
 ## Compatibility
 
@@ -83,8 +92,9 @@ Data from free public endpoints may be delayed, inaccurate, or unavailable at an
 
 ```bash
 npm install
-npm test          # vitest, 120 tests; providers fully fixture-mocked, CI is offline
+npm test          # vitest, 190+ tests (incl. offline integration); providers fully fixture-mocked, CI is offline
 npm run build     # esbuild bundle + tsc
+MW_LIVE=1 npx vitest run tests/live   # live tests against real data sources
 dsh --profile web --patch ./cordis.patch.yml   # local load
 ```
 
