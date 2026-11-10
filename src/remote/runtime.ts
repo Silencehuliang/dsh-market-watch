@@ -33,6 +33,7 @@ export interface MarketWatchDataAccess {
   moveToGroup(symbol: string, groupId: string): Promise<unknown>
   setSortMode(mode: 'default' | 'asc' | 'desc'): Promise<unknown>
   createGroup(name: string): Promise<unknown>
+  updateSettings(patch: Record<string, unknown>): Promise<unknown>
 }
 
 export class MarketWatchRuntime extends TypertRemoteService {
@@ -108,5 +109,12 @@ export class MarketWatchRuntime extends TypertRemoteService {
   async createGroup(name: string, signal?: AbortSignal): Promise<OpResult> {
     void signal
     return opResultSchema.parse(await this.data.createGroup(name))
+  }
+
+  /** 部分更新设置(zod schema 校验兜底)。 */
+  @Remote
+  async updateSettings(patch: Record<string, unknown>, signal?: AbortSignal): Promise<OpResult> {
+    void signal
+    return opResultSchema.parse(await this.data.updateSettings(patch))
   }
 }

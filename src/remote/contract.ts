@@ -23,6 +23,19 @@ export const watchlistItemSchema = z
   })
   .readonly()
 
+export const settingsSchema = z
+  .object({
+    intervalMs: z.number(),
+    riseColor: z.enum(['red', 'green']),
+    privacy: z.object({ exposeAmounts: z.boolean() }).readonly(),
+    sortMode: z.enum(['default', 'asc', 'desc']),
+    alertsEnabled: z.boolean(),
+    miniBarSymbols: z.array(z.string()).readonly(),
+  })
+  .readonly()
+
+export const settingsResultSchema = z.object({ settings: settingsSchema }).readonly()
+
 export const watchlistResultSchema = z
   .object({
     items: z.array(watchlistItemSchema),
@@ -30,6 +43,8 @@ export const watchlistResultSchema = z
       .array(z.object({ id: z.string(), name: z.string() }))
       .readonly(),
     sortMode: z.enum(['default', 'asc', 'desc']),
+    riseColor: z.enum(['red', 'green']),
+    settings: settingsSchema,
   })
   .readonly()
 
@@ -50,16 +65,6 @@ export const holdingsItemSchema = z
   .readonly()
 
 export const holdingsResultSchema = z.object({ items: z.array(holdingsItemSchema) }).readonly()
-
-export const settingsSchema = z
-  .object({
-    intervalMs: z.number(),
-    riseColor: z.enum(['red', 'green']),
-    privacy: z.object({ exposeAmounts: z.boolean() }).readonly(),
-  })
-  .readonly()
-
-export const settingsResultSchema = z.object({ settings: settingsSchema }).readonly()
 
 export type WatchlistResult = z.infer<typeof watchlistResultSchema>
 export type HoldingsResult = z.infer<typeof holdingsResultSchema>
@@ -206,6 +211,18 @@ export const MARKET_WATCH_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'createGroup',
     invocation: { kind: 'direct' },
     parameters: [json('name', 'name', `${PKG}#GroupName`, z.string())],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#OpResult`, opResultSchema),
+  },
+  {
+    id: `${PKG}#market-watch/updateSettings`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'updateSettings',
+    invocation: { kind: 'direct' },
+    parameters: [
+      json('patch', 'patch', `${PKG}#SettingsPatch`, z.record(z.string(), z.unknown())),
+    ],
     cancellation: { parameter: 'signal' },
     result: resultOf(`${PKG}#OpResult`, opResultSchema),
   },

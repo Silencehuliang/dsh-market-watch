@@ -14,8 +14,11 @@ const MARKET_KIND = 'market'
 const RED = '#E5484D'
 const GREEN = '#12B76A'
 
-function pctColor(p: number): string {
-  return p >= 0 ? RED : GREEN
+function pctColor(p: number, riseColor: string = 'red'): string {
+  // riseColor='green' 表示绿涨红跌(反转);默认红涨绿跌
+  const redUp = riseColor !== 'green'
+  if (p >= 0) return redUp ? RED : GREEN
+  return redUp ? GREEN : RED
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -31,11 +34,12 @@ function MiniBar(props: any) {
     items: any[]
     totalRate: number | null
     holdingsCount: number
+    riseColor: string
   } | null>(null)
 
   const reload = useCallback(async () => {
     try {
-      const q = (await props.fetchQuotes()) as { items: any[] }
+      const q = (await props.fetchQuotes()) as { items: any[]; riseColor?: string }
       const h = (await props.fetchHoldings()) as { items: any[] }
       const holdingItems = h.items.filter((i) => !i.isClosed)
       const totalCost = holdingItems.reduce((s, i) => s + (i.costPrice ?? i.costNav ?? 0) * (i.shares ?? 0), 0)
@@ -44,6 +48,7 @@ function MiniBar(props: any) {
         items: q.items.slice(0, 3),
         totalRate: holdingItems.length > 0 && totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : null,
         holdingsCount: holdingItems.length,
+        riseColor: q.riseColor ?? 'red',
       })
     } catch {
       /* 静默:迷你条不打扰 */
@@ -93,7 +98,7 @@ function MiniBar(props: any) {
           <span key={it.symbol} style={{ display: 'inline-flex', gap: 4 }}>
             <span style={{ fontWeight: 600 }}>{it.name}</span>
             <span>{it.price > 0 ? it.price : '—'}</span>
-            <span style={{ color: pctColor(it.changePercent) }}>
+            <span style={{ color: pctColor(it.changePercent, data.riseColor) }}>
               {it.changePercent >= 0 ? '+' : ''}
               {it.changePercent.toFixed(2)}%
             </span>
@@ -103,7 +108,7 @@ function MiniBar(props: any) {
       {data.totalRate !== null && (
         <span style={{ borderTop: '1px solid rgba(128,128,128,0.3)', paddingLeft: 8 }}>
           总收益
-          <span style={{ color: pctColor(data.totalRate), marginLeft: 2 }}>
+          <span style={{ color: pctColor(data.totalRate, data.riseColor), marginLeft: 2 }}>
             {data.totalRate >= 0 ? '+' : ''}
             {data.totalRate.toFixed(2)}%
           </span>
@@ -117,8 +122,11 @@ function MarketBody(props: any) {
   const [items, setItems] = useState<any[] | null>(null)
   const [groups, setGroups] = useState<any[]>([])
   const [sortMode, setSortModeState] = useState<string>('default')
+  const [riseColor, setRiseColor] = useState<string>('red')
+  const [settings, setSettingsState] = useState<any | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showSearch, setShowSearch] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [query, setQuery] = useState('')
   const [candidates, setCandidates] = useState<any[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -130,17 +138,20 @@ function MarketBody(props: any) {
       setItems(r.items)
       setGroups(r.groups ?? [])
       setSortModeState(r.sortMode ?? 'default')
+      setRiseColor(r.riseColor ?? 'red')
+      setSettingsState(r.settings ?? null)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
   }, [props.fetchQuotes])
 
+  const intervalMs = settings?.intervalMs ?? 5000
   useEffect(() => {
     void reload()
-    const t = setInterval(() => void reload(), 5000)
+    const t = setInterval(() => void reload(), intervalMs)
     return () => clearInterval(t)
-  }, [reload])
+  }, [reload, intervalMs])
 
   const doSearch = useCallback(
     async (q: string) => {
@@ -273,6 +284,9 @@ function MarketBody(props: any) {
           <button style={ghostBtn} onClick={() => setShowSearch((v) => !v)}>
             {showSearch ? '收起' : '＋ 添加'}
           </button>
+          <button style={ghostBtn} title="设置" onClick={() => setShowSettings((v) => !v)}>
+            ⚙
+          </button>
         </div>
       </div>
 
@@ -366,7 +380,7 @@ function MarketBody(props: any) {
                           </span>
                           <span
                             style={{
-                              color: pctColor(it.changePercent),
+                              color: pctColor(it.changePercent, riseColor),
                               fontSize: 12,
                               fontVariantNumeric: 'tabular-nums',
                             }}
@@ -416,6 +430,52 @@ function MarketBody(props: any) {
               </div>
             )
           })
+      )}
+
+      {showSettings && settings && (
+        <div style={{ padding: '10px', borderTop: '2px solid rgba(128,128,128,0.25)', fontSize: 12 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>设置</div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            轮询间隔(秒 3~60):
+            <input
+              type="number"
+              min={3}
+              max={60}
+              value={Math.round(settings.intervalMs / 1000)}
+              onChange={(e) => {
+                const sec = Number(e.target.value)
+                if (sec >= 3 && sec <= 60) void props.updateSettings({ intervalMs: sec * 1000 })
+              }}
+              style={{ width: 60, background: 'transparent', color: 'inherit', border: '1px solid rgba(128,128,128,0.35)', borderRadius: 4 }}
+            />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <input
+              type="checkbox"
+              checked={riseColor === 'green'}
+              onChange={(e) => void props.updateSettings({ riseColor: e.target.checked ? 'green' : 'red' })}
+            />
+            绿涨红跌(反转)
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <input
+              type="checkbox"
+              checked={settings.privacy.exposeAmounts}
+              onChange={(e) =>
+                void props.updateSettings({ privacy: { exposeAmounts: e.target.checked } })
+              }
+            />
+            向模型暴露金额/份额/成本(隐私模式)
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <input
+              type="checkbox"
+              checked={settings.alertsEnabled}
+              onChange={(e) => void props.updateSettings({ alertsEnabled: e.target.checked })}
+            />
+            启用涨跌提醒
+          </label>
+        </div>
       )}
     </div>
   )
@@ -482,6 +542,7 @@ export function apply(ctx: any): void {
               setPinned: (symbol: string, pinned: boolean) => call('setPinned', symbol, pinned),
               moveToGroup: (symbol: string, groupId: string) => call('moveToGroup', symbol, groupId),
               setSortMode: (mode: string) => call('setSortMode', mode),
+              updateSettings: (patch: Record<string, unknown>) => call('updateSettings', patch),
             }),
           },
           (props: any) => <MarketBody {...props} />,

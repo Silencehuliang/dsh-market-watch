@@ -69,6 +69,12 @@ export const TYPERT_MANIFEST: TypertContribution = {
             name: 'createGroup',
             signature: 'createGroup(name: string, signal?: AbortSignal): Promise<OpResult>',
           },
+          {
+            kind: 'method',
+            name: 'updateSettings',
+            signature:
+              'updateSettings(patch: Record<string, unknown>, signal?: AbortSignal): Promise<OpResult>',
+          },
         ],
         types: [],
       },

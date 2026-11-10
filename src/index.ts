@@ -56,17 +56,21 @@ const marketWatchSpec = defineDomain({
   },
   global: {
     schema: z.object({
-      intervalMs: z.number(),
+      intervalMs: z.number().min(3000).max(60000),
       riseColor: z.enum(['red', 'green']),
       privacy: z.object({ exposeAmounts: z.boolean() }),
       // default 保证 v1 存量 global(无 sortMode)通过 v2 校验(FR-CFG-03)
       sortMode: z.enum(['default', 'asc', 'desc']).default('default'),
+      alertsEnabled: z.boolean().default(true),
+      miniBarSymbols: z.array(z.string()).default([]),
     }),
     initial: {
       intervalMs: 5000,
       riseColor: 'red',
       privacy: { exposeAmounts: false },
       sortMode: 'default' as const,
+      alertsEnabled: true,
+      miniBarSymbols: [],
     },
   },
 })
@@ -236,7 +240,13 @@ export function apply(ctx: Context) {
       { id: 'builtin:other', name: '其他' },
       ...custom,
     ]
-    return { items, groups, sortMode: settings.sortMode }
+    return {
+      items,
+      groups,
+      sortMode: settings.sortMode,
+      riseColor: settings.riseColor,
+      settings,
+    }
   }
 
   async function setPinnedCore(symbolRaw: string, pinned: boolean): Promise<{ ok: boolean; symbol: string }> {
@@ -272,6 +282,14 @@ export function apply(ctx: Context) {
       await domain.table('groups').put(id, { name, order })
     }
     return { ok: true, symbol: id }
+  }
+
+  async function updateSettingsCore(patch: Record<string, unknown>): Promise<{ ok: boolean; symbol: string }> {
+    if (!domain) return { ok: false, symbol: '' }
+    const cur = domain.global.get()
+    // 运行时 global.set 的 zod schema 校验兜底(intervalMs 3~60s 等)
+    await (domain.global.set as (v: unknown) => Promise<unknown>)({ ...cur, ...patch })
+    return { ok: true, symbol: '' }
   }
 
   // ---------- 自选增删核心(T14:工具与 Remote 共用) ----------
@@ -316,6 +334,7 @@ export function apply(ctx: Context) {
     moveToGroup: (symbol, groupId) => moveToGroupCore(symbol, groupId),
     setSortMode: (mode) => setSortModeCore(mode),
     createGroup: (name) => createGroupCore(name),
+    updateSettings: (patch) => updateSettingsCore(patch),
   }
   new MarketWatchRuntime(ctx, dataAccess)
   ctx.effect(() => {

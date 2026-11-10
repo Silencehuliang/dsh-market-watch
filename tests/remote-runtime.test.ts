@@ -21,11 +21,27 @@ function makeData(overrides: Partial<MarketWatchDataAccess> = {}): MarketWatchDa
       ],
       groups: [{ id: 'builtin:a_stock', name: 'A股' }],
       sortMode: 'default' as const,
+      riseColor: 'red' as const,
+      settings: {
+        intervalMs: 5000,
+        riseColor: 'red' as const,
+        privacy: { exposeAmounts: false },
+        sortMode: 'default' as const,
+        alertsEnabled: true,
+        miniBarSymbols: [],
+      },
     }),
     getHoldingsView: async () => ({
       items: [{ symbol: 'fund:110022', profitRate: 2.5, isClosed: false }],
     }),
-    getSettingsView: () => ({ intervalMs: 5000, riseColor: 'red', privacy: { exposeAmounts: false } }),
+    getSettingsView: () => ({
+      intervalMs: 5000,
+      riseColor: 'red',
+      privacy: { exposeAmounts: false },
+      sortMode: 'default',
+      alertsEnabled: true,
+      miniBarSymbols: [],
+    }),
     searchSymbols: async () => ({
       items: [
         { symbol: 'cn_sh:600519', name: '贵州茅台', market: 'cn_sh', type: 'stock' },
@@ -34,6 +50,11 @@ function makeData(overrides: Partial<MarketWatchDataAccess> = {}): MarketWatchDa
     }),
     addToWatchlist: async () => ({ ok: true, symbol: 'cn_sh:600519' }),
     removeFromWatchlist: async () => ({ ok: true, symbol: 'cn_sh:600519' }),
+    setPinned: async () => ({ ok: true, symbol: 'cn_sh:600519' }),
+    moveToGroup: async () => ({ ok: true, symbol: 'cn_sh:600519' }),
+    setSortMode: async () => ({ ok: true, symbol: '' }),
+    createGroup: async () => ({ ok: true, symbol: 'custom:测试' }),
+    updateSettings: async () => ({ ok: true, symbol: '' }),
     ...overrides,
   }
 }
@@ -67,6 +88,15 @@ describe('MarketWatchRuntime', () => {
           ],
           groups: [{ id: 'builtin:fund', name: '基金' }],
           sortMode: 'default' as const,
+          riseColor: 'red' as const,
+          settings: {
+            intervalMs: 5000,
+            riseColor: 'red' as const,
+            privacy: { exposeAmounts: false },
+            sortMode: 'default' as const,
+            alertsEnabled: true,
+            miniBarSymbols: [],
+          },
         }),
       }),
     )
