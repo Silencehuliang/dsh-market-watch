@@ -1,5 +1,8 @@
 import type { Market, SymbolId } from './symbol.js'
 
+/** 行情币种(腾讯美股/港股返回;CNY 市场省略)。 */
+export type Currency = 'USD' | 'HKD' | 'CNY'
+
 export type { Market, SymbolId }
 
 /** 行情报价(股票/期货/外汇)。 */
@@ -18,6 +21,8 @@ export interface Quote {
   /** 行情时间,ISO 或 `YYYY-MM-DD HH:mm:ss`。 */
   time: string
   status: 'open' | 'closed' | 'pre' | 'post' | 'halt' | 'unknown'
+  /** 计价币种(hk→HKD、us→USD;CNY 市场省略,FR-WL-06 汇率折算依赖)。 */
+  currency?: Currency
   /** provider id。 */
   source: string
   delayedSec?: number

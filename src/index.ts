@@ -5,6 +5,7 @@ import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
 import { QuoteService } from './core/quote-service.js'
 import { fetchSinaStocks } from './core/providers/sina.js'
+import { fetchTencentQuotes } from './core/providers/tencent.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
 import { isMarketOpenNow, marketStatus } from './core/calendar.js'
@@ -106,6 +107,8 @@ export function apply(ctx: Context) {
   })
 
   const stockQuotes = new QuoteService(fetchSinaStocks)
+  /** 港股/美股(腾讯,T21)。 */
+  const overseasQuotes = new QuoteService(fetchTencentQuotes)
 
   /** 基金估值转 Quote 形态:price = 估值(盘中)或昨日净值(收盘后)。 */
   const fundQuotes = new QuoteService(async (symbols) => {
@@ -125,7 +128,7 @@ export function apply(ctx: Context) {
     }))
   })
 
-  /** 按 market 路由:股票走 sina,基金走东财。休市市场不发网络请求(FR-DATA-07),用缓存收盘价;无缓存的标的强制取一次。 */
+  /** 按 market 路由:A股走 sina、港股/美股走腾讯、基金走东财。休市市场不发网络请求(FR-DATA-07),用缓存收盘价;无缓存的标的强制取一次。 */
   async function getQuotes(symbols: SymbolId[]): Promise<Quote[]> {
     const now = new Date()
     const open: SymbolId[] = []
@@ -134,19 +137,23 @@ export function apply(ctx: Context) {
       ;(isMarketOpenNow(parseSymbol(s).market, now) ? open : closed).push(s)
     }
     const closedCached = [
-      ...stockQuotes.peekCached(closed.filter((s) => parseSymbol(s).market !== 'fund')),
+      ...stockQuotes.peekCached(closed.filter((s) => ['cn_sh', 'cn_sz', 'cn_bj'].includes(parseSymbol(s).market))),
+      ...overseasQuotes.peekCached(closed.filter((s) => ['hk', 'us'].includes(parseSymbol(s).market))),
       ...fundQuotes.peekCached(closed.filter((s) => parseSymbol(s).market === 'fund')),
     ]
     const cachedIds = new Set(closedCached.map((q) => q.symbol))
     const fetchSymbols = [...open, ...closed.filter((s) => !cachedIds.has(s))]
-    const stocks = fetchSymbols.filter((s) => parseSymbol(s).market !== 'fund')
+    const cnStocks = fetchSymbols.filter((s) => ['cn_sh', 'cn_sz', 'cn_bj'].includes(parseSymbol(s).market))
+    const overseas = fetchSymbols.filter((s) => ['hk', 'us'].includes(parseSymbol(s).market))
     const funds = fetchSymbols.filter((s) => parseSymbol(s).market === 'fund')
-    const [stockRes, fundRes] = await Promise.allSettled([
-      stocks.length ? stockQuotes.getQuotes(stocks) : Promise.resolve([] as Quote[]),
+    const [stockRes, overseasRes, fundRes] = await Promise.allSettled([
+      cnStocks.length ? stockQuotes.getQuotes(cnStocks) : Promise.resolve([] as Quote[]),
+      overseas.length ? overseasQuotes.getQuotes(overseas) : Promise.resolve([] as Quote[]),
       funds.length ? fundQuotes.getQuotes(funds) : Promise.resolve([] as Quote[]),
     ])
     const out: Quote[] = [...closedCached]
     if (stockRes.status === 'fulfilled') out.push(...stockRes.value)
+    if (overseasRes.status === 'fulfilled') out.push(...overseasRes.value)
     if (fundRes.status === 'fulfilled') out.push(...fundRes.value)
     // 由交易日历填充 status(FR-DATA-07):open/closed/pre/post
     return out.map((q) => ({ ...q, status: marketStatus(parseSymbol(q.symbol).market, now) }))
