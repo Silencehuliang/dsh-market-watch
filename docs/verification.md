@@ -61,6 +61,14 @@
 - **注意**:新增任何 link 型插件依赖,都必须在管理员终端创建 junction;另外 profile 里 3 个断链 junction(目标目录已不存在的 `dsh-matt-board`/`dsh-our-free-model`/`dsh-workstation`)已删除并在 patch 层注释挂载行,恢复项目后需同样以管理员重建。
 - `@anysearch/anysearch-dsh`、`dshmarket` 为版本不兼容(仅 skip 警告,无害),可在插件管理页卸载清理。
 
+## 9. M0 实机验证结论(2026-11-10,全部通过)
+
+- ✅ **宿主侧**:dsh web 插件管理页显示组件「market-watch · 运行中」——`apply(ctx)` 执行,8 个工具注册、storage domain 打开均成功。
+- ✅ **浏览器侧**:shell.overlay 徽章「📈 market-watch」在界面显示——esbuild + `__ModuleLoader__` 客户端 bundle 加载成功(与官方构建约定一致的复刻方案验证通过)。
+- ✅ **Agent 工具链路**:对话内调用 `market_watch_hello` 返回 `hello from market-watch`。
+- ✅ **数据源**:新浪 A 股/东财基金估值已用真实数据验证(§6);天天基金 `fundgz` 失效已用 `FundMNFInfo` 替代。
+- **M0 遗留**(随后续里程碑):迷你条候选位置实测、通知可达性验证(宿主侧全局通知)、简报 schedule 生命周期、桌面版 npm 包安装(需发布)。
+
 ## 6. M0 数据源实测(2026-11-09)
 
 | 数据源 | 地址 | 结果 |
