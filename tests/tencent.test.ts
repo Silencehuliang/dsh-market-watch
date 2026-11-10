@@ -34,6 +34,20 @@ describe('parseTencentQuote', () => {
     expect(q!.price).toBeCloseTo(350.69)
     expect(q!.changePercent).toBeCloseTo(2.43)
     expect(q!.currency).toBe('USD')
+    // 盘口一档(买一 120@350.45 / 卖一 40@350.60)→ 委比 (120−40)/160 = 50%
+    expect(q!.bid1).toBeCloseTo(350.45)
+    expect(q!.ask1).toBeCloseTo(350.6)
+    expect(q!.bidVol1).toBe(120)
+    expect(q!.askVol1).toBe(40)
+    expect(q!.orderBookRatio).toBeCloseTo(50)
+  })
+  it('港股:盘口量为 0 → 一档价格保留、委比省略', () => {
+    const q = parseTencentQuote('hk:00700', HK_LINE.slice(HK_LINE.indexOf('=') + 1).replace(/"/g, ''))
+    expect(q!.bid1).toBeCloseTo(418.6)
+    expect(q!.ask1).toBeCloseTo(418.6)
+    expect(q!.bidVol1).toBeUndefined()
+    expect(q!.askVol1).toBeUndefined()
+    expect(q!.orderBookRatio).toBeUndefined()
   })
   it('价格 0 返回 null', () => {
     expect(parseTencentQuote('hk:00700', 'v_hk00700="100~x~00700~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0";'.replace('v_hk00700=', ''))).toBeNull()

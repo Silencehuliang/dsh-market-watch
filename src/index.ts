@@ -226,7 +226,8 @@ export function apply(ctx: Context) {
         },
         prev,
         current,
-        { now, throttleMs: 180_000, marketOpen: true }, // FR-ALERT-03 节流
+        // FR-ALERT-03 节流;开市门禁已在上方 status !== 'open' 处短路,此处传真实值而非硬编码
+        { now, throttleMs: 180_000, marketOpen: q.status === 'open' },
       )
       if (fired) {
         const info = `${rule.symbol} ${rule.kind === 'price' ? '价格' : '涨跌幅'}${rule.direction === 'up' ? '上穿' : '下穿'} ${rule.threshold},当前 ${current.toFixed(2)}`
@@ -514,7 +515,7 @@ export function apply(ctx: Context) {
     defineTool({
       name: 'market_quote',
       description:
-        '查询行情,返回现价、涨跌额、涨跌幅等:A股、港股、美股、期货(国内/国际)、外汇。数据来自公开网页接口,可能延迟,不构成投资建议。',
+        '查询行情,返回现价、涨跌额、涨跌幅等;A股/港股/美股另含盘口一档(bid1/ask1)与委比(orderBookRatio,%),源未提供时省略:A股、港股、美股、期货(国内/国际)、外汇。数据来自公开网页接口,可能延迟,不构成投资建议。',
       parameters: {
         symbols: {
           type: 'array',
@@ -534,6 +535,9 @@ export function apply(ctx: Context) {
             price: q.price,
             change: q.change,
             changePercent: q.changePercent,
+            bid1: q.bid1,
+            ask1: q.ask1,
+            orderBookRatio: q.orderBookRatio,
             asOf: q.time,
             delayed: (q.delayedSec ?? 0) > 0 || q.stale === true,
             source: q.source,

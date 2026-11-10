@@ -18,6 +18,14 @@ export interface Quote {
   prevClose?: number
   volume?: number
   amount?: number
+  /** 买一价/卖一价(盘口一档;源未提供时省略)。 */
+  bid1?: number
+  ask1?: number
+  /** 买一量/卖一量(源原始单位,通常为手)。 */
+  bidVol1?: number
+  askVol1?: number
+  /** 委比(%):(委买 − 委卖) ÷ (委买 + 委卖) × 100,按可得档位计算(A 股五档、港美股一档);无盘口量时省略。 */
+  orderBookRatio?: number
   /** 行情时间,ISO 或 `YYYY-MM-DD HH:mm:ss`。 */
   time: string
   status: 'open' | 'closed' | 'pre' | 'post' | 'halt' | 'unknown'

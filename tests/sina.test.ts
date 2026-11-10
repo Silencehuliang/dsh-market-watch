@@ -20,6 +20,13 @@ describe('parseSinaStock', () => {
     expect(q!.change).toBeCloseTo(-8.01, 2)
     expect(q!.changePercent).toBeCloseTo(-0.5513, 3)
     expect(q!.source).toBe('sina')
+    // 盘口一档(fixture 买一 100@1444.900 / 卖一 4000@1444.990)
+    expect(q!.bid1).toBe(1444.9)
+    expect(q!.ask1).toBe(1444.99)
+    expect(q!.bidVol1).toBe(100)
+    expect(q!.askVol1).toBe(4000)
+    // 五档委比:买 100+200+400+200+100=1000,卖 4000+13333+200+200+500=18233
+    expect(q!.orderBookRatio).toBeCloseTo(-89.6, 1)
   })
 
   it('停牌(关键价格全 0)→ 返回 null', () => {
@@ -46,5 +53,9 @@ describe('parseSinaBatch', () => {
     expect(quotes).toHaveLength(2)
     expect(quotes[0]!.symbol).toBe('cn_sh:600519')
     expect(quotes[1]!.symbol).toBe('cn_sz:000001')
+    // 全零盘口 → 一档与委比省略
+    expect(quotes[1]!.bid1).toBeUndefined()
+    expect(quotes[1]!.ask1).toBeUndefined()
+    expect(quotes[1]!.orderBookRatio).toBeUndefined()
   })
 })

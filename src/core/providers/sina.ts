@@ -4,6 +4,7 @@ import { normalizeSymbol, toProviderCode } from '../symbol.js'
 /**
  * 新浪行情 Provider。请求 `https://hq.sinajs.cn/list=代码1,代码2`,
  * 返回 GB18030 编码的 `var hq_str_<code>="名称,今开,昨收,现价,最高,最低,...";`。
+ * 盘口:[10..19]=买一量,买一价,…,买五量;[20..29]=卖一量,卖一价,…,卖五量。
  */
 
 export const SINA_ID = 'sina'
@@ -40,6 +41,15 @@ export function parseSinaStock(raw: string): Quote | null {
   const change = price - prevClose
   const changePercent = prevClose > 0 ? (change / prevClose) * 100 : 0
 
+  // 盘口五档(量价交替):[10]买一量 [11]买一价 … [18]买五量 [19]买五价;[20..29] 卖侧同构
+  const bidVol1 = Number(fields[10])
+  const bid1 = Number(fields[11])
+  const askVol1 = Number(fields[20])
+  const ask1 = Number(fields[21])
+  const bidTotal = [10, 12, 14, 16, 18].reduce((s, i) => s + Number(fields[i]), 0)
+  const askTotal = [20, 22, 24, 26, 28].reduce((s, i) => s + Number(fields[i]), 0)
+  const orderBookRatio = bidTotal + askTotal > 0 ? ((bidTotal - askTotal) / (bidTotal + askTotal)) * 100 : undefined
+
   return {
     symbol,
     name,
@@ -52,6 +62,11 @@ export function parseSinaStock(raw: string): Quote | null {
     prevClose,
     volume,
     amount,
+    bid1: bid1 > 0 ? bid1 : undefined,
+    ask1: ask1 > 0 ? ask1 : undefined,
+    bidVol1: bidVol1 > 0 ? bidVol1 : undefined,
+    askVol1: askVol1 > 0 ? askVol1 : undefined,
+    orderBookRatio,
     time: `${date} ${time}`,
     status: 'unknown',
     source: SINA_ID,

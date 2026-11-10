@@ -2,6 +2,7 @@
  * 腾讯行情 Provider(港股 hk: / 美股 us:;M0/T20 实测)。
  * 返回 `~` 分隔,统一索引:[1]名称 [2]代码 [3]现价 [4]昨收 [5]开盘 [6]成交量
  * [30]时间 [31]涨跌额 [32]涨跌幅 [33]最高 [34]最低;币种美股在 [35]、港股在 [75]。
+ * 盘口一档:[9]买一价 [10]买一量 [19]卖一价 [20]卖一量。
  */
 import type { Currency, Quote, SymbolId } from '../types.js'
 import { fetchGb18030, parseNum as parseNumShared } from './http.js'
@@ -28,6 +29,13 @@ export function parseTencentQuote(symbol: SymbolId, raw: string): Quote | null {
   const price = parseNum(f[3])
   const prevClose = parseNum(f[4])
   if (price <= 0) return null
+  // 盘口一档(港股实测量常为 0,仅在有量时参与委比)
+  const bid1 = parseNum(f[9])
+  const bidVol1 = parseNum(f[10])
+  const ask1 = parseNum(f[19])
+  const askVol1 = parseNum(f[20])
+  const orderBookRatio =
+    bidVol1 + askVol1 > 0 ? ((bidVol1 - askVol1) / (bidVol1 + askVol1)) * 100 : undefined
   return {
     symbol,
     name: f[1] ?? symbol,
@@ -39,6 +47,11 @@ export function parseTencentQuote(symbol: SymbolId, raw: string): Quote | null {
     low: parseNum(f[34]),
     prevClose,
     volume: parseNum(f[6]),
+    bid1: bid1 > 0 ? bid1 : undefined,
+    ask1: ask1 > 0 ? ask1 : undefined,
+    bidVol1: bidVol1 > 0 ? bidVol1 : undefined,
+    askVol1: askVol1 > 0 ? askVol1 : undefined,
+    orderBookRatio,
     time: f[30]?.replace(/\//g, '-') ?? '',
     status: 'unknown',
     currency,
