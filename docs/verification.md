@@ -89,6 +89,22 @@
 - **修复方式**:node 全程 UTF-8 读源文件,经 `execSync(…, { input: JSON.stringify({title, body}) })` 把 payload 走 stdin 传给 `gh api -X PATCH --input -`。修复脚本 `.scratch/fix-titles.mjs`。
 - **预防**:凡经 CLI 传中文,一律用 `--body-file`/`--input`(UTF-8 文件)+ node 调用,不要在 PowerShell 5.1 里内联中文字符串。
 
+## 14. M3 全功能实机测试(2026-11-10,playwright 自动化,通过)
+
+| # | 测试 | 结果 |
+| --- | --- | --- |
+| 1 | 对话批量添加多市场标的(hk00700/usAAPL/fut_cn:IF0/fx:susdcny) | ✅ 四市场全部入自选;模型经搜索自动纠正 `usAAPL`→`us:AAPL.OQ` |
+| 2 | 行情 tab 多市场分组渲染 | ✅ A股/港股/美股/其他 组均正确(期货/外汇按设计落「其他」组) |
+| 3 | 行点击展开 K线详情 | ✅ 「23 bars · 近 1 个月(前复权)」,SVG 折线渲染 |
+| 4 | 提醒设置(对话 → alert_set) | ✅ 规则 ID `cn_sh:600519\|price\|up` 正确持久化 |
+| 5 | 盘后简报(对话 → brief_generate) | ✅ 表格化输出(多市场行情 + 状态「开市」标注) |
+| 6a | 隐私模式(默认)查询持仓 | ✅ 只返回百分比(+3.14%,与 (350.69−340)/340 一致),金额被过滤——模型自行按汇率换算 |
+| 6b | 开启隐私后查询持仓 | ✅ 350.69 美元 × 汇率 6.67 → 人民币计价输出 |
+| 7 | Console | ✅ 全程 0 errors 0 warnings |
+
+- 修复:列表行补币种标注(`USD · us:AAPL.OQ`,T21 验收「外币标的显示」)。
+- 已知测试环境注意:playwright `type` 全局键盘输入不可靠,需 `fill` 精确输入框 ref。
+
 ## 13. M3 数据源实测(2026-11-10)
 
 | 数据源 | 地址 | 结果 |

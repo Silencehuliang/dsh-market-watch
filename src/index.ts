@@ -351,6 +351,7 @@ export function apply(ctx: Context) {
           stale: q === undefined || q.stale === true,
           status: q?.status ?? 'unknown',
           isFund: parseSymbol(v.symbol as never).market === 'fund', // UI 标「估值(延迟约2分钟)」
+          currency: q?.currency, // UI 标币种(T21 验收:外币标的显示)
         }
       }),
       settings.sortMode,

@@ -529,7 +529,10 @@ function MarketBody(props: any) {
                             <span style={{ opacity: 0.55, fontWeight: 400 }}>{t('closed')}</span>
                           ) : null}
                         </span>
-                        <span style={{ opacity: 0.55, fontSize: 11 }}>{it.symbol}</span>
+                        <span style={{ opacity: 0.55, fontSize: 11 }}>
+                          {it.currency && it.currency !== 'CNY' ? `${it.currency} · ` : ''}
+                          {it.symbol}
+                        </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>

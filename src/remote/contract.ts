@@ -22,6 +22,7 @@ export const watchlistItemSchema = z
     stale: z.boolean(),
     status: z.enum(['open', 'closed', 'pre', 'post', 'halt', 'unknown']),
     isFund: z.boolean(),
+    currency: z.enum(['USD', 'HKD', 'CNY']).optional(),
   })
   .readonly()
 
