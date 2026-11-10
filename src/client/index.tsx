@@ -665,20 +665,28 @@ export function apply(ctx: any): void {
   // i18n 字典注册(FR-UI-08)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'market-watch: dictionaries')
 
-  // Remote 挂载:浏览器侧贡献 → 反射取命名空间
+  // Remote 挂载:浏览器侧贡献 → 反射取命名空间。
+  // slot 同步注册、组件立刻轮询,而 $mount 是异步的:每次插件(重)应用都存在
+  // 「挂载未完成」窗口期,期间 call() 必须等待挂载而非立即抛错(否则每轮热重载
+  // 都闪现 "Remote is not mounted")。
   let ns: any
-  ctx.effect(async () => {
-    const dispose = await ctx.remote.$mount(MARKET_REMOTE)
-    ns = (ctx.reflect as unknown as { get(name: string): unknown }).get('remote.market-watch')
-    if (ns === undefined) throw new Error('market-watch: the market-watch Remote namespace did not mount')
-    return () => {
-      ns = undefined
-      void dispose()
-    }
-  }, 'market-watch: remote')
+  const mounted = new Promise<void>((resolve, reject) => {
+    ctx.effect(async () => {
+      const dispose = await ctx.remote.$mount(MARKET_REMOTE)
+      ns = (ctx.reflect as unknown as { get(name: string): unknown }).get('remote.market-watch')
+      if (ns === undefined) throw new Error('market-watch: the market-watch Remote namespace did not mount')
+      resolve()
+      return () => {
+        ns = undefined
+        void dispose()
+      }
+    }, 'market-watch: remote')
+  })
+  mounted.catch(() => {}) // 挂载失败的真实错误由 call() 透传给 UI,这里防 unhandledrejection
 
   const call = async (method: string, ...args: unknown[]) => {
-    if (ns === undefined) throw new Error('market-watch Remote is not mounted')
+    if (ns === undefined) await mounted
+    if (ns === undefined) throw new Error('market-watch Remote is not mounted') // 已卸载(挂载 promise 已 resolve)
     const fn = (ns as Record<string, ((...a: unknown[]) => unknown) | undefined>)[method]
     if (typeof fn !== 'function') throw new Error(`market-watch Remote method missing: ${method}`)
     const result = await fn(...args)
