@@ -9,7 +9,7 @@ import { fetchTencentQuotes } from './core/providers/tencent.js'
 import { fetchFuturesFxQuotes, fetchFxRates } from './core/providers/futures-fx.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
-import { isMarketOpenNow, marketStatus } from './core/calendar.js'
+import { isMarketOpenNow, isTradingDay, marketStatus } from './core/calendar.js'
 import { searchSymbols } from './core/search.js'
 import { evaluatePosition, sharesFromAmount } from './core/portfolio.js'
 import { evaluateRule } from './core/alerts.js'
@@ -22,7 +22,7 @@ import { TYPERT_MANIFEST } from './remote/typert.js'
 import { TypertRegistry } from '@deepseek-ai/dsh-typert-registry'
 
 export const name = 'market-watch'
-export const inject = ['tools', 'storageDomain', 'typert']
+export const inject = ['tools', 'storageDomain', 'typert', 'schedule']
 
 const marketWatchSpec = defineDomain({
   name: 'market_watch',
@@ -681,6 +681,92 @@ export function apply(ctx: Context) {
         if (!domain) return toJson({ error: 'storage not ready' })
         await domain.table('alerts').delete(args.id as never)
         return toJson({ id: args.id, deleted: true })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'brief_generate',
+      description:
+        '生成盘前/盘后简报的结构化数据(休市日返回 closed=true 与「休市」)。由模型整理成文,不构成投资建议。',
+      parameters: {
+        kind: { type: 'string', required: true, description: 'pre_open(盘前)或 post_close(盘后)' },
+      },
+      output: jsonOutput,
+      async execute(args: { kind: string }) {
+        if (!domain) return toJson({ error: 'storage not ready' })
+        const kind = args.kind === 'pre_open' ? 'pre_open' : 'post_close'
+        const now = new Date()
+        // 休市日简报(FR-BRIEF/M3 验收):按 A 股交易日历判定
+        if (!isTradingDay('cn_sh', now)) {
+          return toJson({ kind, closed: true, message: '今日休市', tradingDay: false, items: [] })
+        }
+        const entries = Array.from(domain.table('watchlist').entries())
+        if (entries.length === 0) {
+          return toJson({ kind, closed: false, tradingDay: true, message: '无自选标的', items: [] })
+        }
+        const symbols = entries.map(([s]) => s as never)
+        const quotes = await getQuotes(symbols)
+        const items = quotes
+          .map((q) => ({
+            symbol: q.symbol,
+            name: q.name,
+            price: q.price,
+            changePercent: q.changePercent,
+            currency: q.currency,
+            status: q.status,
+          }))
+          .sort((a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent))
+        const result: Record<string, unknown> = {
+          kind,
+          closed: false,
+          tradingDay: true,
+          generatedAt: now.toISOString(),
+          items,
+        }
+        if (kind === 'post_close') {
+          const view = (await computeHoldingsView()) as { items: any[] }
+          result.holdings = view.items // 已按隐私过滤;外币已折人民币
+        }
+        return toJson(result)
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'brief_schedule',
+      description:
+        '在当前会话创建每日定时简报任务(默认盘前 09:15 / 盘后 15:10,Asia/Shanghai)。触发时由模型调用 brief_generate 整理简报;休市日简报自动返回「休市」。投递绑定创建时的会话(生命周期见 verification.md)。',
+      parameters: {
+        kind: { type: 'string', required: true, description: 'pre_open 或 post_close' },
+        time: { type: 'string', description: 'HH:mm(可选,默认 09:15/15:10)' },
+      },
+      output: jsonOutput,
+      async execute(args: { kind: string; time?: string }) {
+        const kind = args.kind === 'pre_open' ? 'pre_open' : 'post_close'
+        const time = `${args.time ?? (kind === 'pre_open' ? '09:15' : '15:10')}:00`
+        const prompt =
+          kind === 'pre_open'
+            ? '现在是盘前,请调用 brief_generate 工具(kind=pre_open)获取简报数据并整理成简洁的盘前简报;若返回 closed=true,告知用户今日休市。'
+            : '现在已收盘,请调用 brief_generate 工具(kind=post_close)获取简报数据并整理成简洁的收盘简报(含持仓盈亏);若返回 closed=true,告知用户今日休市。'
+        try {
+          // ctx.schedule 类型扩展在 dsh-schedule 包(未装 devDep),运行时由 dsh 提供
+          const scheduleSvc = (ctx as unknown as {
+            schedule: { create: (r: unknown) => Promise<unknown> }
+          }).schedule
+          const schedule = await scheduleSvc.create({
+            title: kind === 'pre_open' ? '盘前简报' : '收盘简报',
+            prompt,
+            daily: { time, time_zone: 'Asia/Shanghai' },
+          })
+          return toJson({ created: true, kind, time, schedule })
+        } catch (e) {
+          return toJson({
+            error: `schedule create failed: ${e instanceof Error ? e.message : String(e)}`,
+          })
+        }
       },
     }),
   )

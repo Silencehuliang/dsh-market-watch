@@ -218,6 +218,14 @@ export function isMarketOpenNow(market: string, utc: Date, table: readonly strin
   return session === 'open'
 }
 
+/** 是否交易日(非周末且非节假日)——简报跳过休市日用(FR-BRIEF)。 */
+export function isTradingDay(market: string, utc: Date, table: readonly string[] = CN_HOLIDAYS_2026): boolean {
+  const tz = marketTimeZone(market)
+  if (!tz) return true
+  const { dow, dateKey } = marketLocalParts(tz, utc)
+  return !isWeekend(dow) && !table.includes(dateKey)
+}
+
 /** 顶层市场状态(open/closed/pre/post),供 Quote.status 填充。 */
 export function marketStatus(
   market: string,
