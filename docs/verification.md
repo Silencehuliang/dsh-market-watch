@@ -102,8 +102,19 @@
 | 6b | 开启隐私后查询持仓 | ✅ 350.69 美元 × 汇率 6.67 → 人民币计价输出 |
 | 7 | Console | ✅ 全程 0 errors 0 warnings |
 
-- 修复:列表行补币种标注(`USD · us:AAPL.OQ`,T21 验收「外币标的显示」)。
 - 已知测试环境注意:playwright `type` 全局键盘输入不可靠,需 `fill` 精确输入框 ref。
+
+## 15. M4 数据源实测(2026-11-10)
+
+| 能力 | 数据源 | 结果 |
+| --- | --- | --- |
+| 沪深港通资金 | 东财 `push2.eastmoney.com/api/qt/kamt.rtmin/get` | ✅ s2n 分钟级数组 |
+| 板块资金流 | 东财 `push2.eastmoney.com/api/qt/clist/get?fs=m:90+t:2&fields=f12,f14,f62,f184` | ✅ f12=代码 f14=名称 f62=主力净流入(元) f184=涨跌幅 |
+| 概念资金流 | 同上 `t:3` | ✅ |
+| 快讯 | 金十 `www.jin10.com/flash_newest.js` | ✅ 数组 `[{id,time,type,data:{title,content}}]` |
+| 快讯-选股宝 | `xuangubao.cn/ding_pan/brief` | ❌ 返回 SSR HTML,无公开 JSON API → 快讯单源(金十) |
+| 基金排行 | `fund.eastmoney.com/data/rankhandler.aspx`(需 Referer `fund.eastmoney.com/data/fundranking.html`) | ✅ datas CSV:0=代码 1=名称 4=净值 6=日涨幅 11=近一年 |
+| 基金排行-mobapi | `FundRank/List` 变体 | ❌ 404/无访问权限 |
 
 ## 13. M3 数据源实测(2026-11-10)
 
