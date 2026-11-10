@@ -19,6 +19,8 @@ function makeData(overrides: Partial<MarketWatchDataAccess> = {}): MarketWatchDa
           stale: false,
         },
       ],
+      groups: [{ id: 'builtin:a_stock', name: 'A股' }],
+      sortMode: 'default' as const,
     }),
     getHoldingsView: async () => ({
       items: [{ symbol: 'fund:110022', profitRate: 2.5, isClosed: false }],
@@ -63,6 +65,8 @@ describe('MarketWatchRuntime', () => {
               stale: true,
             },
           ],
+          groups: [{ id: 'builtin:fund', name: '基金' }],
+          sortMode: 'default' as const,
         }),
       }),
     )

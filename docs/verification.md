@@ -77,6 +77,12 @@
 - ⚠️ **客户端 inject 依赖链**:`dsh-api-remotes` 需要 `dsh-api-gateway`;tab 注册需要 `dsh-client-ui-sidebar-right` + `dsh-client-ui-conversation`。缺失时整个客户端半区静默不加载。
 - dsh web 认证:CLI 打印 `?token=...` 信任 URL;自动化测试需带 token 访问。
 
+## 11. T15 分组/排序/置顶 实测(2026-11-10,通过)+ 存储版本坑
+
+- ✅ playwright 实测:分组标题「A股(1)」渲染(空组自动隐藏)、排序按钮三态循环(⇅ 默认→涨幅↑→涨幅↓,setSortMode 持久化)、📌 置顶(「📌 贵州茅台」渲染)、移动分组(select 改值 → 茅台移入「港股(1)」,原组消失)。Console 零错误。
+- ⚠️ **存储版本坑**:`compatibleVersions: [1]` 对 json backend 的 whole-unit 版本检查**不生效**——`version: 2` 打开 v1 存储直接 `fatal: StorageError: version-mismatch`,dsh 启动失败。结论:**新增表 + global 加 `z.default()` 字段这类向后兼容变更,保持 version 不变**;真正改记录格式时才 bump,且 bump 前需手工迁移或删除旧单元文件(`dshHomePath('storages')`)。
+- 前端搜索焦点:playwright `type` 全局键盘输入会落到主输入框,需先 click/fill 目标输入框。
+
 ## 6. M0 数据源实测(2026-11-09)
 
 | 数据源 | 地址 | 结果 |

@@ -11,6 +11,7 @@ import { marketStatus } from './core/calendar.js'
 import { searchSymbols } from './core/search.js'
 // 轮询/UI 刷新用 isMarketOpenNow 判断(FR-DATA-07:节假日不发起高频轮询)
 import { evaluatePosition, sharesFromAmount } from './core/portfolio.js'
+import { sortWatchItems } from './core/watchlist-sort.js'
 import type { PositionResult } from './core/portfolio.js'
 import type { Quote, SymbolId } from './core/types.js'
 import { MarketWatchRuntime } from './remote/runtime.js'
@@ -23,7 +24,7 @@ export const inject = ['tools', 'storageDomain', 'typert']
 
 const marketWatchSpec = defineDomain({
   name: 'market_watch',
-  version: 1,
+  version: 1, // 新增 groups 表 + global.sortMode(default 填充)均向后兼容,记录格式未变,不 bump(实测 bump 会 fatal version-mismatch,见 verification.md §11)
   tables: {
     watchlist: domainTable(
       z.object({
@@ -46,14 +47,27 @@ const marketWatchSpec = defineDomain({
         updatedAt: z.string(),
       }),
     ),
+    groups: domainTable(
+      z.object({
+        name: z.string(),
+        order: z.number(),
+      }),
+    ),
   },
   global: {
     schema: z.object({
       intervalMs: z.number(),
       riseColor: z.enum(['red', 'green']),
       privacy: z.object({ exposeAmounts: z.boolean() }),
+      // default 保证 v1 存量 global(无 sortMode)通过 v2 校验(FR-CFG-03)
+      sortMode: z.enum(['default', 'asc', 'desc']).default('default'),
     }),
-    initial: { intervalMs: 5000, riseColor: 'red', privacy: { exposeAmounts: false } },
+    initial: {
+      intervalMs: 5000,
+      riseColor: 'red',
+      privacy: { exposeAmounts: false },
+      sortMode: 'default' as const,
+    },
   },
 })
 
@@ -134,11 +148,22 @@ export function apply(ctx: Context) {
 
   // ---------- Remote 数据组装(T11:供浏览器侧经 Remote 网关消费) ----------
 
-  const getSettingsView = () =>
-    domain?.global.get() ?? {
+  const getSettingsView = (): {
+    intervalMs: number
+    riseColor: 'red' | 'green'
+    privacy: { exposeAmounts: boolean }
+    sortMode: 'default' | 'asc' | 'desc'
+  } =>
+    (domain?.global.get() ?? {
       intervalMs: 5000,
       riseColor: 'red' as const,
       privacy: { exposeAmounts: false },
+      sortMode: 'default' as const,
+    }) as {
+      intervalMs: number
+      riseColor: 'red' | 'green'
+      privacy: { exposeAmounts: boolean }
+      sortMode: 'default' | 'asc' | 'desc'
     }
 
   async function computeHoldingsView(): Promise<unknown> {
@@ -176,13 +201,14 @@ export function apply(ctx: Context) {
   }
 
   async function getWatchlistWithQuotes(): Promise<unknown> {
-    if (!domain) return { items: [] }
+    if (!domain) return { items: [], groups: [], sortMode: 'default' }
+    const settings = domain.global.get()
     const entries = Array.from(domain.table('watchlist').entries())
     const symbols = entries.map(([s]) => s as never)
     const quotes = symbols.length ? await getQuotes(symbols) : []
     const quoteBySymbol = new Map(quotes.map((q) => [q.symbol, q]))
-    return {
-      items: entries.map(([symbol, v]) => {
+    const items = sortWatchItems(
+      entries.map(([symbol, v]) => {
         const q = quoteBySymbol.get(symbol as never)
         return {
           symbol: v.symbol,
@@ -196,7 +222,56 @@ export function apply(ctx: Context) {
           stale: q === undefined || q.stale === true,
         }
       }),
+      settings.sortMode,
+    )
+    // 内置组(id 顺序即显示顺序)+ 自定义组(groups 表按 order)
+    const custom = Array.from(domain.table('groups').entries())
+      .sort((a, b) => a[1].order - b[1].order)
+      .map(([id, v]) => ({ id, name: v.name }))
+    const groups = [
+      { id: 'builtin:a_stock', name: 'A股' },
+      { id: 'builtin:hk', name: '港股' },
+      { id: 'builtin:us', name: '美股' },
+      { id: 'builtin:fund', name: '基金' },
+      { id: 'builtin:other', name: '其他' },
+      ...custom,
+    ]
+    return { items, groups, sortMode: settings.sortMode }
+  }
+
+  async function setPinnedCore(symbolRaw: string, pinned: boolean): Promise<{ ok: boolean; symbol: string }> {
+    if (!domain) return { ok: false, symbol: symbolRaw }
+    const symbolId = normalizeSymbol(symbolRaw)
+    const rec = domain.table('watchlist').get(symbolId)
+    if (rec) await domain.table('watchlist').update(symbolId, (r) => ({ ...r, pinned }))
+    return { ok: true, symbol: symbolId }
+  }
+
+  async function moveToGroupCore(symbolRaw: string, groupId: string): Promise<{ ok: boolean; symbol: string }> {
+    if (!domain) return { ok: false, symbol: symbolRaw }
+    const symbolId = normalizeSymbol(symbolRaw)
+    const rec = domain.table('watchlist').get(symbolId)
+    if (rec) await domain.table('watchlist').update(symbolId, (r) => ({ ...r, groupId }))
+    return { ok: true, symbol: symbolId }
+  }
+
+  async function setSortModeCore(mode: 'default' | 'asc' | 'desc'): Promise<{ ok: boolean; symbol: string }> {
+    if (!domain) return { ok: false, symbol: '' }
+    const cur = domain.global.get()
+    // zod .default() 使 get 的推断类型复杂化;运行时 set 有 schema 校验兜底
+    await (domain.global.set as (v: unknown) => Promise<unknown>)({ ...cur, sortMode: mode })
+    return { ok: true, symbol: '' }
+  }
+
+  async function createGroupCore(name: string): Promise<{ ok: boolean; symbol: string }> {
+    if (!domain) return { ok: false, symbol: name }
+    const id = `custom:${name}`
+    const existing = domain.table('groups').get(id)
+    if (!existing) {
+      const order = Array.from(domain.table('groups').entries()).length
+      await domain.table('groups').put(id, { name, order })
     }
+    return { ok: true, symbol: id }
   }
 
   // ---------- 自选增删核心(T14:工具与 Remote 共用) ----------
@@ -237,6 +312,10 @@ export function apply(ctx: Context) {
     searchSymbols: async (query) => ({ items: await searchSymbols(query) }),
     addToWatchlist: (symbol, name) => addToWatchlistCore(symbol, name),
     removeFromWatchlist: (symbol) => removeFromWatchlistCore(symbol),
+    setPinned: (symbol, pinned) => setPinnedCore(symbol, pinned),
+    moveToGroup: (symbol, groupId) => moveToGroupCore(symbol, groupId),
+    setSortMode: (mode) => setSortModeCore(mode),
+    createGroup: (name) => createGroupCore(name),
   }
   new MarketWatchRuntime(ctx, dataAccess)
   ctx.effect(() => {

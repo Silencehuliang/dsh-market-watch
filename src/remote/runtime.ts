@@ -29,6 +29,10 @@ export interface MarketWatchDataAccess {
   searchSymbols(query: string): Promise<unknown>
   addToWatchlist(symbol: string, name?: string): Promise<unknown>
   removeFromWatchlist(symbol: string): Promise<unknown>
+  setPinned(symbol: string, pinned: boolean): Promise<unknown>
+  moveToGroup(symbol: string, groupId: string): Promise<unknown>
+  setSortMode(mode: 'default' | 'asc' | 'desc'): Promise<unknown>
+  createGroup(name: string): Promise<unknown>
 }
 
 export class MarketWatchRuntime extends TypertRemoteService {
@@ -73,5 +77,36 @@ export class MarketWatchRuntime extends TypertRemoteService {
   async removeFromWatchlist(symbol: string, signal?: AbortSignal): Promise<OpResult> {
     void signal
     return opResultSchema.parse(await this.data.removeFromWatchlist(symbol))
+  }
+
+  /** 置顶/取消置顶(FR-WL-04)。 */
+  @Remote
+  async setPinned(symbol: string, pinned: boolean, signal?: AbortSignal): Promise<OpResult> {
+    void signal
+    return opResultSchema.parse(await this.data.setPinned(symbol, pinned))
+  }
+
+  /** 移动标的到分组(FR-WL-03)。 */
+  @Remote
+  async moveToGroup(symbol: string, groupId: string, signal?: AbortSignal): Promise<OpResult> {
+    void signal
+    return opResultSchema.parse(await this.data.moveToGroup(symbol, groupId))
+  }
+
+  /** 设置排序模式(三态循环)。 */
+  @Remote
+  async setSortMode(
+    mode: 'default' | 'asc' | 'desc',
+    signal?: AbortSignal,
+  ): Promise<OpResult> {
+    void signal
+    return opResultSchema.parse(await this.data.setSortMode(mode))
+  }
+
+  /** 创建自定义分组。 */
+  @Remote
+  async createGroup(name: string, signal?: AbortSignal): Promise<OpResult> {
+    void signal
+    return opResultSchema.parse(await this.data.createGroup(name))
   }
 }

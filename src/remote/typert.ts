@@ -48,6 +48,27 @@ export const TYPERT_MANIFEST: TypertContribution = {
             name: 'removeFromWatchlist',
             signature: 'removeFromWatchlist(symbol: string, signal?: AbortSignal): Promise<OpResult>',
           },
+          {
+            kind: 'method',
+            name: 'setPinned',
+            signature: 'setPinned(symbol: string, pinned: boolean, signal?: AbortSignal): Promise<OpResult>',
+          },
+          {
+            kind: 'method',
+            name: 'moveToGroup',
+            signature:
+              'moveToGroup(symbol: string, groupId: string, signal?: AbortSignal): Promise<OpResult>',
+          },
+          {
+            kind: 'method',
+            name: 'setSortMode',
+            signature: "setSortMode(mode: 'default' | 'asc' | 'desc', signal?: AbortSignal): Promise<OpResult>",
+          },
+          {
+            kind: 'method',
+            name: 'createGroup',
+            signature: 'createGroup(name: string, signal?: AbortSignal): Promise<OpResult>',
+          },
         ],
         types: [],
       },

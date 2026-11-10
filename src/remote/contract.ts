@@ -23,7 +23,15 @@ export const watchlistItemSchema = z
   })
   .readonly()
 
-export const watchlistResultSchema = z.object({ items: z.array(watchlistItemSchema) }).readonly()
+export const watchlistResultSchema = z
+  .object({
+    items: z.array(watchlistItemSchema),
+    groups: z
+      .array(z.object({ id: z.string(), name: z.string() }))
+      .readonly(),
+    sortMode: z.enum(['default', 'asc', 'desc']),
+  })
+  .readonly()
 
 export const holdingsItemSchema = z
   .object({
@@ -152,6 +160,52 @@ export const MARKET_WATCH_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'removeFromWatchlist',
     invocation: { kind: 'direct' },
     parameters: [json('symbol', 'symbol', `${PKG}#RemoveSymbol`, z.string())],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#OpResult`, opResultSchema),
+  },
+  {
+    id: `${PKG}#market-watch/setPinned`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'setPinned',
+    invocation: { kind: 'direct' },
+    parameters: [
+      json('symbol', 'symbol', `${PKG}#PinSymbol`, z.string()),
+      json('pinned', 'pinned', `${PKG}#PinValue`, z.boolean()),
+    ],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#OpResult`, opResultSchema),
+  },
+  {
+    id: `${PKG}#market-watch/moveToGroup`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'moveToGroup',
+    invocation: { kind: 'direct' },
+    parameters: [
+      json('symbol', 'symbol', `${PKG}#MoveSymbol`, z.string()),
+      json('groupId', 'groupId', `${PKG}#MoveGroup`, z.string()),
+    ],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#OpResult`, opResultSchema),
+  },
+  {
+    id: `${PKG}#market-watch/setSortMode`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'setSortMode',
+    invocation: { kind: 'direct' },
+    parameters: [json('mode', 'mode', `${PKG}#SortModeValue`, z.enum(['default', 'asc', 'desc']))],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#OpResult`, opResultSchema),
+  },
+  {
+    id: `${PKG}#market-watch/createGroup`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'createGroup',
+    invocation: { kind: 'direct' },
+    parameters: [json('name', 'name', `${PKG}#GroupName`, z.string())],
     cancellation: { parameter: 'signal' },
     result: resultOf(`${PKG}#OpResult`, opResultSchema),
   },
