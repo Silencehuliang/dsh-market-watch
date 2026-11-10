@@ -8,6 +8,7 @@ import { fetchSinaStocks } from './core/providers/sina.js'
 import { fetchTencentQuotes } from './core/providers/tencent.js'
 import { fetchFuturesFxQuotes, fetchFxRates } from './core/providers/futures-fx.js'
 import { fetchFundHistory, fetchKline, rangeToDays } from './core/providers/kline.js'
+import { fetchFundRank, fetchHsgFlow, fetchNewsFlash, fetchSectorFlow } from './core/providers/m4.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
 import { isMarketOpenNow, isTradingDay, marketStatus } from './core/calendar.js'
@@ -842,6 +843,71 @@ export function apply(ctx: Context) {
       async execute(args: { code: string; days?: number }) {
         const list = await fetchFundHistory(args.code, args.days ?? 20)
         return toJson({ code: args.code, list })
+      },
+    }),
+  )
+
+  // 快讯缓存(FR-NEWS-01:不超过 60 秒)
+  let newsCache: { at: number; items: unknown[] } | null = null
+
+  ctx.tools.register(
+    defineTool({
+      name: 'market_flow',
+      description:
+        '资金流向:north=沪深港通/北向资金,sector=行业板块资金流排行,concept=概念板块资金流排行(单位:亿)。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        kind: { type: 'string', required: true, description: 'north / sector / concept' },
+        limit: { type: 'number', description: '排行条数(默认 10)' },
+      },
+      output: jsonOutput,
+      async execute(args: { kind: string; limit?: number }) {
+        if (args.kind === 'north') return toJson(await fetchHsgFlow())
+        if (args.kind === 'sector' || args.kind === 'concept') {
+          return toJson({ kind: args.kind, items: await fetchSectorFlow(args.kind, args.limit ?? 10) })
+        }
+        return toJson({ error: 'kind must be north/sector/concept' })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'market_news_flash',
+      description:
+        '快讯列表(金十,按时间倒序,支持 limit 与关键词过滤)。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        limit: { type: 'number', description: '条数(默认 20)' },
+        keyword: { type: 'string', description: '关键词过滤(可选)' },
+      },
+      output: jsonOutput,
+      async execute(args: { limit?: number; keyword?: string }) {
+        const now = Date.now()
+        if (!newsCache || now - newsCache.at > 60_000) {
+          newsCache = { at: now, items: await fetchNewsFlash(50) }
+        }
+        let items = newsCache.items as Array<{ id: string; time: string; title: string; content: string }>
+        if (args.keyword) {
+          items = items.filter(
+            (n) => n.title.includes(args.keyword!) || n.content.includes(args.keyword!),
+          )
+        }
+        return toJson({ items: items.slice(0, args.limit ?? 20) })
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'market_fund_rank',
+      description: '基金排行(按日涨幅或近一年收益)。数据来自公开接口,不构成投资建议。',
+      parameters: {
+        sort: { type: 'string', description: 'day(日涨幅,默认)或 year(近一年)' },
+        limit: { type: 'number', description: '条数(默认 10)' },
+      },
+      output: jsonOutput,
+      async execute(args: { sort?: string; limit?: number }) {
+        const sort = args.sort === 'year' ? 'year' : 'day'
+        return toJson({ sort, items: await fetchFundRank(sort, args.limit ?? 10) })
       },
     }),
   )
