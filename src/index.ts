@@ -7,11 +7,10 @@ import { QuoteService } from './core/quote-service.js'
 import { fetchSinaStocks } from './core/providers/sina.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
-import { marketStatus } from './core/calendar.js'
+import { isMarketOpenNow, marketStatus } from './core/calendar.js'
 import { searchSymbols } from './core/search.js'
-// 轮询/UI 刷新用 isMarketOpenNow 判断(FR-DATA-07:节假日不发起高频轮询)
 import { evaluatePosition, sharesFromAmount } from './core/portfolio.js'
-import { sortWatchItems } from './core/watchlist-sort.js'
+import { BUILTIN_GROUPS, groupForMarket, sortWatchItems } from './core/watchlist-sort.js'
 import type { PositionResult } from './core/portfolio.js'
 import type { Quote, SymbolId } from './core/types.js'
 import { MarketWatchRuntime } from './remote/runtime.js'
@@ -76,12 +75,7 @@ const marketWatchSpec = defineDomain({
 })
 
 function defaultGroup(symbolId: string): string {
-  const { market } = parseSymbol(symbolId as never)
-  if (market === 'cn_sh' || market === 'cn_sz' || market === 'cn_bj') return 'builtin:a_stock'
-  if (market === 'hk') return 'builtin:hk'
-  if (market === 'us') return 'builtin:us'
-  if (market === 'fund') return 'builtin:fund'
-  return 'builtin:other'
+  return groupForMarket(parseSymbol(symbolId as never).market)
 }
 
 /** 序列化去除 undefined 字段(JsonValue 不允许 undefined)。 */
@@ -131,19 +125,30 @@ export function apply(ctx: Context) {
     }))
   })
 
-  /** 按 market 路由:股票走 sina,基金走东财。 */
+  /** 按 market 路由:股票走 sina,基金走东财。休市市场不发网络请求(FR-DATA-07),用缓存收盘价;无缓存的标的强制取一次。 */
   async function getQuotes(symbols: SymbolId[]): Promise<Quote[]> {
-    const stocks = symbols.filter((s) => parseSymbol(s).market !== 'fund')
-    const funds = symbols.filter((s) => parseSymbol(s).market === 'fund')
+    const now = new Date()
+    const open: SymbolId[] = []
+    const closed: SymbolId[] = []
+    for (const s of symbols) {
+      ;(isMarketOpenNow(parseSymbol(s).market, now) ? open : closed).push(s)
+    }
+    const closedCached = [
+      ...stockQuotes.peekCached(closed.filter((s) => parseSymbol(s).market !== 'fund')),
+      ...fundQuotes.peekCached(closed.filter((s) => parseSymbol(s).market === 'fund')),
+    ]
+    const cachedIds = new Set(closedCached.map((q) => q.symbol))
+    const fetchSymbols = [...open, ...closed.filter((s) => !cachedIds.has(s))]
+    const stocks = fetchSymbols.filter((s) => parseSymbol(s).market !== 'fund')
+    const funds = fetchSymbols.filter((s) => parseSymbol(s).market === 'fund')
     const [stockRes, fundRes] = await Promise.allSettled([
       stocks.length ? stockQuotes.getQuotes(stocks) : Promise.resolve([] as Quote[]),
       funds.length ? fundQuotes.getQuotes(funds) : Promise.resolve([] as Quote[]),
     ])
-    const out: Quote[] = []
+    const out: Quote[] = [...closedCached]
     if (stockRes.status === 'fulfilled') out.push(...stockRes.value)
     if (fundRes.status === 'fulfilled') out.push(...fundRes.value)
     // 由交易日历填充 status(FR-DATA-07):open/closed/pre/post
-    const now = new Date()
     return out.map((q) => ({ ...q, status: marketStatus(parseSymbol(q.symbol).market, now) }))
   }
 
@@ -225,6 +230,7 @@ export function apply(ctx: Context) {
           asOf: q?.time ?? '',
           stale: q === undefined || q.stale === true,
           status: q?.status ?? 'unknown',
+          isFund: parseSymbol(v.symbol as never).market === 'fund', // UI 标「估值(延迟约2分钟)」
         }
       }),
       settings.sortMode,
@@ -233,14 +239,7 @@ export function apply(ctx: Context) {
     const custom = Array.from(domain.table('groups').entries())
       .sort((a, b) => a[1].order - b[1].order)
       .map(([id, v]) => ({ id, name: v.name }))
-    const groups = [
-      { id: 'builtin:a_stock', name: 'A股' },
-      { id: 'builtin:hk', name: '港股' },
-      { id: 'builtin:us', name: '美股' },
-      { id: 'builtin:fund', name: '基金' },
-      { id: 'builtin:other', name: '其他' },
-      ...custom,
-    ]
+    const groups = [...BUILTIN_GROUPS.map((g) => ({ id: g.id, name: g.name })), ...custom]
     return {
       items,
       groups,
@@ -266,12 +265,16 @@ export function apply(ctx: Context) {
     return { ok: true, symbol: symbolId }
   }
 
-  async function setSortModeCore(mode: 'default' | 'asc' | 'desc'): Promise<{ ok: boolean; symbol: string }> {
-    if (!domain) return { ok: false, symbol: '' }
+  /** 统一的 global 部分更新(运行时 zod schema 校验兜底)。 */
+  async function setGlobal(patch: Record<string, unknown>): Promise<boolean> {
+    if (!domain) return false
     const cur = domain.global.get()
-    // zod .default() 使 get 的推断类型复杂化;运行时 set 有 schema 校验兜底
-    await (domain.global.set as (v: unknown) => Promise<unknown>)({ ...cur, sortMode: mode })
-    return { ok: true, symbol: '' }
+    await (domain.global.set as (v: unknown) => Promise<unknown>)({ ...cur, ...patch })
+    return true
+  }
+
+  async function setSortModeCore(mode: 'default' | 'asc' | 'desc'): Promise<{ ok: boolean; symbol: string }> {
+    return { ok: await setGlobal({ sortMode: mode }), symbol: '' }
   }
 
   async function createGroupCore(name: string): Promise<{ ok: boolean; symbol: string }> {
@@ -286,11 +289,20 @@ export function apply(ctx: Context) {
   }
 
   async function updateSettingsCore(patch: Record<string, unknown>): Promise<{ ok: boolean; symbol: string }> {
-    if (!domain) return { ok: false, symbol: '' }
-    const cur = domain.global.get()
-    // 运行时 global.set 的 zod schema 校验兜底(intervalMs 3~60s 等)
-    await (domain.global.set as (v: unknown) => Promise<unknown>)({ ...cur, ...patch })
-    return { ok: true, symbol: '' }
+    return { ok: await setGlobal(patch), symbol: '' }
+  }
+
+  async function deleteGroupCore(groupId: string): Promise<{ ok: boolean; symbol: string }> {
+    if (!domain) return { ok: false, symbol: groupId }
+    await domain.table('groups').delete(groupId as never)
+    // 组内标的回退到兜底组(FR-WL-03:一个标的属于一个分组)
+    const entries = Array.from(domain.table('watchlist').entries())
+    for (const [key, rec] of entries) {
+      if (rec.groupId === groupId) {
+        await domain.table('watchlist').update(key as never, (r) => ({ ...r, groupId: 'builtin:other' }))
+      }
+    }
+    return { ok: true, symbol: groupId }
   }
 
   // ---------- 自选增删核心(T14:工具与 Remote 共用) ----------
@@ -298,21 +310,20 @@ export function apply(ctx: Context) {
   async function addToWatchlistCore(
     symbolRaw: string,
     name?: string,
-  ): Promise<{ ok: boolean; symbol: string }> {
-    if (!domain) return { ok: false, symbol: symbolRaw }
+  ): Promise<{ ok: boolean; symbol: string; added: boolean }> {
+    if (!domain) return { ok: false, symbol: symbolRaw, added: false }
     const symbolId = normalizeSymbol(symbolRaw)
     const existing = domain.table('watchlist').get(symbolId)
-    if (!existing) {
-      await domain.table('watchlist').put(symbolId, {
-        symbol: symbolId,
-        name: name ?? symbolRaw,
-        groupId: defaultGroup(symbolId),
-        pinned: false,
-        order: 0,
-        addedAt: new Date().toISOString(),
-      })
-    }
-    return { ok: true, symbol: symbolId }
+    if (existing) return { ok: true, symbol: symbolId, added: false }
+    await domain.table('watchlist').put(symbolId, {
+      symbol: symbolId,
+      name: name ?? symbolRaw,
+      groupId: defaultGroup(symbolId),
+      pinned: false,
+      order: 0,
+      addedAt: new Date().toISOString(),
+    })
+    return { ok: true, symbol: symbolId, added: true }
   }
 
   async function removeFromWatchlistCore(
@@ -335,6 +346,7 @@ export function apply(ctx: Context) {
     moveToGroup: (symbol, groupId) => moveToGroupCore(symbol, groupId),
     setSortMode: (mode) => setSortModeCore(mode),
     createGroup: (name) => createGroupCore(name),
+    deleteGroup: (groupId) => deleteGroupCore(groupId),
     updateSettings: (patch) => updateSettingsCore(patch),
   }
   new MarketWatchRuntime(ctx, dataAccess)
@@ -460,19 +472,9 @@ export function apply(ctx: Context) {
       output: jsonOutput,
       async execute(args: { symbol: string; name?: string; group?: string }) {
         if (!domain) return toJson({ error: 'storage not ready' })
-        const symbolId = normalizeSymbol(args.symbol)
-        const existing = domain.table('watchlist').get(symbolId)
-        if (existing) return toJson({ symbol: symbolId, added: false })
-        const rec = {
-          symbol: symbolId,
-          name: args.name ?? args.symbol,
-          groupId: args.group ?? defaultGroup(symbolId),
-          pinned: false,
-          order: 0,
-          addedAt: new Date().toISOString(),
-        }
-        await domain.table('watchlist').put(symbolId, rec)
-        return toJson({ symbol: symbolId, added: true })
+        const r = await addToWatchlistCore(args.symbol, args.name)
+        if (r.added && args.group) await moveToGroupCore(r.symbol, args.group) // group 参数:添加后归组
+        return toJson({ symbol: r.symbol, added: r.added })
       },
     }),
   )
@@ -506,9 +508,8 @@ export function apply(ctx: Context) {
       output: jsonOutput,
       async execute(args: { symbol: string }) {
         if (!domain) return toJson({ error: 'storage not ready' })
-        const symbolId = normalizeSymbol(args.symbol)
-        await domain.table('watchlist').delete(symbolId)
-        return toJson({ symbol: symbolId, removed: true })
+        const r = await removeFromWatchlistCore(args.symbol)
+        return toJson({ symbol: r.symbol, removed: r.ok })
       },
     }),
   )

@@ -21,6 +21,7 @@ export const watchlistItemSchema = z
     asOf: z.string(),
     stale: z.boolean(),
     status: z.enum(['open', 'closed', 'pre', 'post', 'halt', 'unknown']),
+    isFund: z.boolean(),
   })
   .readonly()
 
@@ -212,6 +213,16 @@ export const MARKET_WATCH_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'createGroup',
     invocation: { kind: 'direct' },
     parameters: [json('name', 'name', `${PKG}#GroupName`, z.string())],
+    cancellation: { parameter: 'signal' },
+    result: resultOf(`${PKG}#OpResult`, opResultSchema),
+  },
+  {
+    id: `${PKG}#market-watch/deleteGroup`,
+    service: 'market-watch',
+    namespace: 'market-watch',
+    method: 'deleteGroup',
+    invocation: { kind: 'direct' },
+    parameters: [json('groupId', 'groupId', `${PKG}#DeleteGroup`, z.string())],
     cancellation: { parameter: 'signal' },
     result: resultOf(`${PKG}#OpResult`, opResultSchema),
   },

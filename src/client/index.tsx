@@ -41,13 +41,25 @@ function MiniBar(props: any) {
   const reload = useCallback(async () => {
     if (typeof document !== 'undefined' && document.hidden) return // FR-UI-07:不可见暂停
     try {
-      const q = (await props.fetchQuotes()) as { items: any[]; riseColor?: string }
+      const q = (await props.fetchQuotes()) as {
+        items: any[]
+        riseColor?: string
+        settings?: { miniBarSymbols?: string[] }
+      }
       const h = (await props.fetchHoldings()) as { items: any[] }
       const holdingItems = h.items.filter((i) => !i.isClosed)
       const totalCost = holdingItems.reduce((s, i) => s + (i.costPrice ?? i.costNav ?? 0) * (i.shares ?? 0), 0)
       const totalValue = holdingItems.reduce((s, i) => s + (i.marketValue ?? 0), 0)
+      // 迷你条标的配置生效(FR-UI-05):设置过 miniBarSymbols 则按其选取,否则取自选前 3
+      const pref: string[] = q.settings?.miniBarSymbols ?? []
+      const norm = (p: string) => p.trim().toLowerCase().replace(/^(sh|sz|bj|hk|gb|usr|nf|hf)_/, '')
+      const chosen = pref.length
+        ? pref
+            .map((p) => q.items.find((i) => i.symbol === p || i.symbol.split(':')[1] === norm(p)))
+            .filter(Boolean)
+        : q.items.slice(0, 3)
       setData({
-        items: q.items.slice(0, 3),
+        items: chosen,
         totalRate: holdingItems.length > 0 && totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : null,
         riseColor: q.riseColor ?? 'red',
       })
@@ -138,6 +150,7 @@ function MarketBody(props: any) {
   const [candidates, setCandidates] = useState<any[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [newGroupName, setNewGroupName] = useState('')
 
   const reload = useCallback(async () => {
     if (typeof document !== 'undefined' && document.hidden) return // FR-UI-07:不可见暂停
@@ -247,6 +260,25 @@ function MarketBody(props: any) {
       else next.add(groupId)
       return next
     })
+  }
+
+  /** 设置改动立即生效(审查修复:此前延迟一个轮询周期)。 */
+  const applySettings = async (patch: Record<string, unknown>) => {
+    await props.updateSettings(patch)
+    await reload()
+  }
+
+  const createGroup = async () => {
+    const name = newGroupName.trim()
+    if (!name) return
+    setBusy('newgroup')
+    try {
+      await props.createGroup(name)
+      setNewGroupName('')
+      await reload()
+    } finally {
+      setBusy(null)
+    }
   }
 
   const rowStyle: React.CSSProperties = {
@@ -384,6 +416,11 @@ function MarketBody(props: any) {
                         >
                           {it.pinned ? '📌 ' : ''}
                           {it.name}
+                          {it.isFund ? (
+                            <span style={{ opacity: 0.55, fontWeight: 400 }} title="估值延迟约2分钟">
+                              {t('fund.estimate')}
+                            </span>
+                          ) : null}
                           {it.stale ? (
                             <span style={{ opacity: 0.55, fontWeight: 400 }}>{t('stale')}</span>
                           ) : null}
@@ -464,7 +501,7 @@ function MarketBody(props: any) {
               value={Math.round(settings.intervalMs / 1000)}
               onChange={(e) => {
                 const sec = Number(e.target.value)
-                if (sec >= 3 && sec <= 60) void props.updateSettings({ intervalMs: sec * 1000 })
+                if (sec >= 3 && sec <= 60) void applySettings({ intervalMs: sec * 1000 })
               }}
               style={{ width: 60, background: 'transparent', color: 'inherit', border: '1px solid rgba(128,128,128,0.35)', borderRadius: 4 }}
             />
@@ -473,7 +510,7 @@ function MarketBody(props: any) {
             <input
               type="checkbox"
               checked={riseColor === 'green'}
-              onChange={(e) => void props.updateSettings({ riseColor: e.target.checked ? 'green' : 'red' })}
+              onChange={(e) => void applySettings({ riseColor: e.target.checked ? 'green' : 'red' })}
             />
             {t('set.invert')}
           </label>
@@ -481,9 +518,7 @@ function MarketBody(props: any) {
             <input
               type="checkbox"
               checked={settings.privacy.exposeAmounts}
-              onChange={(e) =>
-                void props.updateSettings({ privacy: { exposeAmounts: e.target.checked } })
-              }
+              onChange={(e) => void applySettings({ privacy: { exposeAmounts: e.target.checked } })}
             />
             {t('set.privacy')}
           </label>
@@ -491,10 +526,22 @@ function MarketBody(props: any) {
             <input
               type="checkbox"
               checked={settings.alertsEnabled}
-              onChange={(e) => void props.updateSettings({ alertsEnabled: e.target.checked })}
+              onChange={(e) => void applySettings({ alertsEnabled: e.target.checked })}
             />
             {t('set.alerts')}
           </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              placeholder={t('set.newgroup')}
+              disabled={busy !== null}
+              style={{ flex: 1, background: 'transparent', color: 'inherit', border: '1px solid rgba(128,128,128,0.35)', borderRadius: 4, padding: '3px 6px' }}
+            />
+            <button style={ghostBtn} disabled={busy !== null || !newGroupName.trim()} onClick={() => void createGroup()}>
+              {busy === 'newgroup' ? '…' : t('set.create')}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -567,6 +614,7 @@ export function apply(ctx: any): void {
               setPinned: (symbol: string, pinned: boolean) => call('setPinned', symbol, pinned),
               moveToGroup: (symbol: string, groupId: string) => call('moveToGroup', symbol, groupId),
               setSortMode: (mode: string) => call('setSortMode', mode),
+              createGroup: (name: string) => call('createGroup', name),
               updateSettings: (patch: Record<string, unknown>) => call('updateSettings', patch),
               t,
             }),

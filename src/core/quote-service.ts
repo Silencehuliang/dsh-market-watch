@@ -64,6 +64,20 @@ export class QuoteService {
     }
   }
 
+  /**
+   * 只读缓存(不触发网络)。休市市场用它兜底:
+   * 收盘价就是缓存里的最后行情,数据并未「过期」,因此**不标 stale**。
+   * 缓存缺失的 symbol 不返回(由调用方决定是否强制 fetch 一次)。
+   */
+  peekCached(symbols: SymbolId[]): Quote[] {
+    const out: Quote[] = []
+    for (const s of symbols) {
+      const c = this.cache.get(s)
+      if (c) out.push({ ...c, stale: false })
+    }
+    return out
+  }
+
   /** 缓存兜底:一律标 stale(主源失败,无法确认新鲜)。 */
   private fromCache(symbols: SymbolId[]): Quote[] {
     const out: Quote[] = []

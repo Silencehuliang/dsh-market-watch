@@ -33,6 +33,7 @@ export interface MarketWatchDataAccess {
   moveToGroup(symbol: string, groupId: string): Promise<unknown>
   setSortMode(mode: 'default' | 'asc' | 'desc'): Promise<unknown>
   createGroup(name: string): Promise<unknown>
+  deleteGroup(groupId: string): Promise<unknown>
   updateSettings(patch: Record<string, unknown>): Promise<unknown>
 }
 
@@ -109,6 +110,13 @@ export class MarketWatchRuntime extends TypertRemoteService {
   async createGroup(name: string, signal?: AbortSignal): Promise<OpResult> {
     void signal
     return opResultSchema.parse(await this.data.createGroup(name))
+  }
+
+  /** 删除自定义分组(组内标的回退兜底组)。 */
+  @Remote
+  async deleteGroup(groupId: string, signal?: AbortSignal): Promise<OpResult> {
+    void signal
+    return opResultSchema.parse(await this.data.deleteGroup(groupId))
   }
 
   /** 部分更新设置(zod schema 校验兜底)。 */

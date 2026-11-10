@@ -71,6 +71,11 @@ export const TYPERT_MANIFEST: TypertContribution = {
           },
           {
             kind: 'method',
+            name: 'deleteGroup',
+            signature: 'deleteGroup(groupId: string, signal?: AbortSignal): Promise<OpResult>',
+          },
+          {
+            kind: 'method',
             name: 'updateSettings',
             signature:
               'updateSettings(patch: Record<string, unknown>, signal?: AbortSignal): Promise<OpResult>',

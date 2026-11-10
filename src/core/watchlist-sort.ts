@@ -23,14 +23,28 @@ export function nextSortMode(mode: SortMode): SortMode {
   return mode === 'default' ? 'asc' : mode === 'asc' ? 'desc' : 'default'
 }
 
+/** 内置分组(单一真相:显示名与市场映射都从这里出)。 */
+export interface BuiltinGroup {
+  readonly id: string
+  readonly name: string
+  /** 归入该组的市场;空数组表示兜底组。 */
+  readonly markets: readonly string[]
+}
+
+export const BUILTIN_GROUPS: readonly BuiltinGroup[] = [
+  { id: 'builtin:a_stock', name: 'A股', markets: ['cn_sh', 'cn_sz', 'cn_bj'] },
+  { id: 'builtin:hk', name: '港股', markets: ['hk'] },
+  { id: 'builtin:us', name: '美股', markets: ['us'] },
+  { id: 'builtin:fund', name: '基金', markets: ['fund'] },
+  { id: 'builtin:other', name: '其他', markets: [] },
+]
+
+/** 按市场归入内置分组(兜底 builtin:other)。 */
+export function groupForMarket(market: string): string {
+  return (BUILTIN_GROUPS.find((g) => g.markets.includes(market)) ?? BUILTIN_GROUPS[BUILTIN_GROUPS.length - 1]!).id
+}
+
 /** 内置分组的显示名。 */
 export function builtinGroupName(groupId: string): string | null {
-  const map: Record<string, string> = {
-    'builtin:a_stock': 'A股',
-    'builtin:hk': '港股',
-    'builtin:us': '美股',
-    'builtin:fund': '基金',
-    'builtin:other': '其他',
-  }
-  return map[groupId] ?? null
+  return BUILTIN_GROUPS.find((g) => g.id === groupId)?.name ?? null
 }

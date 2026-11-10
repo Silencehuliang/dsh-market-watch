@@ -116,13 +116,13 @@ describe('交易日历(FR-DATA-07)', () => {
   it('isMarketOpenNow:fut_gl/fx 全天交易 → 恒 true', () => {
     expect(isMarketOpenNow('fut_gl', new Date('2026-11-14T02:00:00Z'))).toBe(true)
   })
-  it('marketStatus:节假日 → post(收盘后)', () => {
-    expect(marketStatus('cn_sh', new Date('2026-10-01T02:00:00Z'))).toBe('post')
+  it('marketStatus:节假日 → closed(审查修复:不再误判 post)', () => {
+    expect(marketStatus('cn_sh', new Date('2026-10-01T02:00:00Z'))).toBe('closed')
   })
   it('marketStatus:周二盘中 → open', () => {
     expect(marketStatus('cn_sh', new Date('2026-11-10T02:00:00Z'))).toBe('open')
   })
-  it('marketStatus:周二收盘后(北京时间 20:00)→ post', () => {
-    expect(marketStatus('cn_sh', new Date('2026-11-10T12:00:00Z'))).toBe('post')
+  it('marketStatus:周二收盘后(北京时间 20:00)→ closed', () => {
+    expect(marketStatus('cn_sh', new Date('2026-11-10T12:00:00Z'))).toBe('closed')
   })
 })

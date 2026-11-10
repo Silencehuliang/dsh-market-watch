@@ -224,15 +224,18 @@ export function marketStatus(
   utc: Date,
   table: readonly string[] = CN_HOLIDAYS_2026,
 ): 'open' | 'closed' | 'pre' | 'post' {
-  if (isMarketOpenNow(market, utc, table)) return 'open'
   const tz = marketTimeZone(market)
   if (!tz) return 'open'
-  const { hour, minute } = marketLocalParts(tz, utc)
+  const { dow, hour, minute, dateKey } = marketLocalParts(tz, utc)
+  // 周末与节假日明确为 closed(审查修复:此前落入 post,导致「已收盘」标注不触发)
+  if (isWeekend(dow) || table.includes(dateKey)) return 'closed'
   const session =
     market === 'hk'
       ? hkStockSession(hour, minute)
       : market === 'us'
         ? usStockSession(hour, minute)
         : aStockSession(hour, minute)
-  return session === 'pre' ? 'pre' : 'post'
+  if (session === 'open') return 'open'
+  if (session === 'pre') return 'pre'
+  return 'closed' // lunch 与 post 都按「已收盘」呈现
 }
