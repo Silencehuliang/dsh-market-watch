@@ -20,6 +20,7 @@ export const watchlistItemSchema = z
     changePercent: z.number(),
     asOf: z.string(),
     stale: z.boolean(),
+    status: z.enum(['open', 'closed', 'pre', 'post', 'halt', 'unknown']),
   })
   .readonly()
 

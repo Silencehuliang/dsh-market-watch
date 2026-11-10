@@ -2,12 +2,14 @@
  * dsh-plugin-market-watch — Client plugin entry (browser half).
  *
  * T12:右侧 Sidebar「行情」tab(kind: market),Remote 读自选行情;
- * T14:tab 内搜索添加(FR-WL-02/FR-UI-03)与行内删除;会话页头一键入口(FR-UI-01)。
+ * T14:tab 内搜索添加与行内删除;T15:分组/排序/置顶;T16:迷你条;
+ * T17:设置区;T18:i18n 字典 + 不可见暂停刷新 + 休市/过期标注。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { MARKET_REMOTE } from './remote.js'
+import { NS, en, zh } from './locales.js'
 
-export const inject = ['slots', 'remote', 'sidebarRightTabs', 'sidebarRight']
+export const inject = ['slots', 'remote', 'locale', 'sidebarRightTabs', 'sidebarRight']
 
 const MARKET_ID = 'dsh-plugin-market-watch'
 const MARKET_KIND = 'market'
@@ -33,11 +35,11 @@ function MiniBar(props: any) {
   const [data, setData] = useState<{
     items: any[]
     totalRate: number | null
-    holdingsCount: number
     riseColor: string
   } | null>(null)
 
   const reload = useCallback(async () => {
+    if (typeof document !== 'undefined' && document.hidden) return // FR-UI-07:不可见暂停
     try {
       const q = (await props.fetchQuotes()) as { items: any[]; riseColor?: string }
       const h = (await props.fetchHoldings()) as { items: any[] }
@@ -47,7 +49,6 @@ function MiniBar(props: any) {
       setData({
         items: q.items.slice(0, 3),
         totalRate: holdingItems.length > 0 && totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : null,
-        holdingsCount: holdingItems.length,
         riseColor: q.riseColor ?? 'red',
       })
     } catch {
@@ -58,7 +59,12 @@ function MiniBar(props: any) {
   useEffect(() => {
     void reload()
     const t = setInterval(() => void reload(), 10000)
-    return () => clearInterval(t)
+    const vis = () => void reload()
+    document.addEventListener('visibilitychange', vis)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', vis)
+    }
   }, [reload])
 
   const open = () => {
@@ -83,16 +89,16 @@ function MiniBar(props: any) {
 
   if (data === null) {
     return (
-      <div style={pill} onClick={open} title="打开行情侧栏">
+      <div style={pill} onClick={open} title={props.t('mini.loaded')}>
         📈 market-watch
       </div>
     )
   }
   return (
-    <div style={pill} onClick={open} title="打开行情侧栏">
+    <div style={pill} onClick={open} title={props.t('mini.open')}>
       <span>📈</span>
       {data.items.length === 0 ? (
-        <span style={{ opacity: 0.7 }}>无自选</span>
+        <span style={{ opacity: 0.7 }}>{props.t('mini.none')}</span>
       ) : (
         data.items.map((it) => (
           <span key={it.symbol} style={{ display: 'inline-flex', gap: 4 }}>
@@ -107,7 +113,7 @@ function MiniBar(props: any) {
       )}
       {data.totalRate !== null && (
         <span style={{ borderTop: '1px solid rgba(128,128,128,0.3)', paddingLeft: 8 }}>
-          总收益
+          {props.t('mini.total')}
           <span style={{ color: pctColor(data.totalRate, data.riseColor), marginLeft: 2 }}>
             {data.totalRate >= 0 ? '+' : ''}
             {data.totalRate.toFixed(2)}%
@@ -119,6 +125,7 @@ function MiniBar(props: any) {
 }
 
 function MarketBody(props: any) {
+  const t: (k: string) => string = props.t
   const [items, setItems] = useState<any[] | null>(null)
   const [groups, setGroups] = useState<any[]>([])
   const [sortMode, setSortModeState] = useState<string>('default')
@@ -133,6 +140,7 @@ function MarketBody(props: any) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const reload = useCallback(async () => {
+    if (typeof document !== 'undefined' && document.hidden) return // FR-UI-07:不可见暂停
     try {
       const r = await props.fetchQuotes()
       setItems(r.items)
@@ -149,8 +157,13 @@ function MarketBody(props: any) {
   const intervalMs = settings?.intervalMs ?? 5000
   useEffect(() => {
     void reload()
-    const t = setInterval(() => void reload(), intervalMs)
-    return () => clearInterval(t)
+    const t2 = setInterval(() => void reload(), intervalMs)
+    const vis = () => void reload() // 恢复可见时立即刷新
+    document.addEventListener('visibilitychange', vis)
+    return () => {
+      clearInterval(t2)
+      document.removeEventListener('visibilitychange', vis)
+    }
   }, [reload, intervalMs])
 
   const doSearch = useCallback(
@@ -173,8 +186,8 @@ function MarketBody(props: any) {
   )
 
   useEffect(() => {
-    const t = setTimeout(() => void doSearch(query), 400)
-    return () => clearTimeout(t)
+    const t2 = setTimeout(() => void doSearch(query), 400)
+    return () => clearTimeout(t2)
   }, [query, doSearch])
 
   const add = async (symbol: string, name: string) => {
@@ -253,12 +266,12 @@ function MarketBody(props: any) {
     fontSize: 12,
     padding: '0 4px',
   }
-  const SORT_LABEL: Record<string, string> = { default: '默认', asc: '涨幅↑', desc: '涨幅↓' }
 
   if (error) {
     return (
       <div style={{ padding: 14, fontSize: 13, opacity: 0.8 }}>
-        行情数据加载失败:{error}
+        {t('err.load')}
+        {error}
       </div>
     )
   }
@@ -276,15 +289,19 @@ function MarketBody(props: any) {
   return (
     <div>
       <div style={{ ...rowStyle, borderBottom: 'none' }}>
-        <span style={{ fontWeight: 600, fontSize: 12, opacity: 0.7 }}>自选</span>
+        <span style={{ fontWeight: 600, fontSize: 12, opacity: 0.7 }}>{t('wl.title')}</span>
         <div style={{ display: 'flex', gap: 4 }}>
-          <button style={ghostBtn} title="切换排序(默认→涨幅升→涨幅降)" onClick={() => void cycleSort()}>
-            ⇅ {SORT_LABEL[sortMode] ?? sortMode}
+          <button
+            style={ghostBtn}
+            title="default → asc → desc"
+            onClick={() => void cycleSort()}
+          >
+            {t(`wl.sort.${sortMode}`)}
           </button>
           <button style={ghostBtn} onClick={() => setShowSearch((v) => !v)}>
-            {showSearch ? '收起' : '＋ 添加'}
+            {showSearch ? t('wl.collapse') : t('wl.add')}
           </button>
-          <button style={ghostBtn} title="设置" onClick={() => setShowSettings((v) => !v)}>
+          <button style={ghostBtn} title={t('set.title')} onClick={() => setShowSettings((v) => !v)}>
             ⚙
           </button>
         </div>
@@ -295,7 +312,7 @@ function MarketBody(props: any) {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索代码或名称,如「茅台」「腾讯」「110022」"
+            placeholder={t('search.ph')}
             style={{
               width: '100%',
               boxSizing: 'border-box',
@@ -307,9 +324,9 @@ function MarketBody(props: any) {
               color: 'inherit',
             }}
           />
-          {busy === 'search' && <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>搜索中…</div>}
+          {busy === 'search' && <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>{t('search.doing')}</div>}
           {candidates !== null && candidates.length === 0 && !busy && (
-            <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>无匹配结果</div>
+            <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>{t('search.none')}</div>
           )}
           {candidates?.map((c) => (
             <div key={c.symbol} style={{ ...rowStyle, borderBottom: 'none', padding: '4px 0' }}>
@@ -320,7 +337,7 @@ function MarketBody(props: any) {
                 </span>
               </div>
               <button style={ghostBtn} disabled={busy !== null} onClick={() => void add(c.symbol, c.name)}>
-                {busy === c.symbol ? '…' : '添加'}
+                {busy === c.symbol ? '…' : t('wl.add').replace('＋ ', '')}
               </button>
             </div>
           ))}
@@ -328,11 +345,9 @@ function MarketBody(props: any) {
       )}
 
       {items === null ? (
-        <div style={{ padding: 14, fontSize: 13, opacity: 0.6 }}>加载中…</div>
+        <div style={{ padding: 14, fontSize: 13, opacity: 0.6 }}>{t('loading')}</div>
       ) : items.length === 0 ? (
-        <div style={{ padding: 14, fontSize: 13, opacity: 0.7 }}>
-          暂无自选标的。点上方「＋ 添加」搜索添加。
-        </div>
+        <div style={{ padding: 14, fontSize: 13, opacity: 0.7 }}>{t('empty')}</div>
       ) : (
         groups
           .filter((g) => (byGroup.get(g.id)?.length ?? 0) > 0)
@@ -369,7 +384,12 @@ function MarketBody(props: any) {
                         >
                           {it.pinned ? '📌 ' : ''}
                           {it.name}
-                          {it.stale ? <span style={{ opacity: 0.55, fontWeight: 400 }}>（已过期）</span> : null}
+                          {it.stale ? (
+                            <span style={{ opacity: 0.55, fontWeight: 400 }}>{t('stale')}</span>
+                          ) : null}
+                          {it.status === 'closed' ? (
+                            <span style={{ opacity: 0.55, fontWeight: 400 }}>{t('closed')}</span>
+                          ) : null}
                         </span>
                         <span style={{ opacity: 0.55, fontSize: 11 }}>{it.symbol}</span>
                       </div>
@@ -391,7 +411,7 @@ function MarketBody(props: any) {
                         </div>
                         <button
                           style={ghostBtn}
-                          title={it.pinned ? '取消置顶' : '置顶'}
+                          title={it.pinned ? 'unpin' : 'pin'}
                           disabled={busy !== null}
                           onClick={() => void togglePin(it.symbol, !it.pinned)}
                         >
@@ -399,7 +419,7 @@ function MarketBody(props: any) {
                         </button>
                         <select
                           value={it.groupId}
-                          title="移动到分组"
+                          title={t('move') ?? 'move'}
                           disabled={busy !== null}
                           onChange={(e) => void move(it.symbol, e.target.value)}
                           style={{
@@ -412,13 +432,13 @@ function MarketBody(props: any) {
                         >
                           {groups.map((g2) => (
                             <option key={g2.id} value={g2.id}>
-                              {g2.name}
+                              {nameOf(g2.id)}
                             </option>
                           ))}
                         </select>
                         <button
                           style={ghostBtn}
-                          title="从自选删除"
+                          title="✕"
                           disabled={busy !== null}
                           onClick={() => void remove(it.symbol)}
                         >
@@ -434,9 +454,9 @@ function MarketBody(props: any) {
 
       {showSettings && settings && (
         <div style={{ padding: '10px', borderTop: '2px solid rgba(128,128,128,0.25)', fontSize: 12 }}>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>设置</div>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('set.title')}</div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-            轮询间隔(秒 3~60):
+            {t('set.interval')}
             <input
               type="number"
               min={3}
@@ -455,7 +475,7 @@ function MarketBody(props: any) {
               checked={riseColor === 'green'}
               onChange={(e) => void props.updateSettings({ riseColor: e.target.checked ? 'green' : 'red' })}
             />
-            绿涨红跌(反转)
+            {t('set.invert')}
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <input
@@ -465,7 +485,7 @@ function MarketBody(props: any) {
                 void props.updateSettings({ privacy: { exposeAmounts: e.target.checked } })
               }
             />
-            向模型暴露金额/份额/成本(隐私模式)
+            {t('set.privacy')}
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <input
@@ -473,7 +493,7 @@ function MarketBody(props: any) {
               checked={settings.alertsEnabled}
               onChange={(e) => void props.updateSettings({ alertsEnabled: e.target.checked })}
             />
-            启用涨跌提醒
+            {t('set.alerts')}
           </label>
         </div>
       )}
@@ -482,6 +502,11 @@ function MarketBody(props: any) {
 }
 
 export function apply(ctx: any): void {
+  const t: (k: string) => string = ctx.locale.bind(NS)
+
+  // i18n 字典注册(FR-UI-08)
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'market-watch: dictionaries')
+
   // Remote 挂载:浏览器侧贡献 → 反射取命名空间
   let ns: any
   ctx.effect(async () => {
@@ -513,13 +538,13 @@ export function apply(ctx: any): void {
         id: MARKET_ID,
         kind: MARKET_KIND,
         priority: 'extension',
-        title: () => '行情',
+        title: () => t('tab.title'),
         guide: [
           {
             id: 'market-guide-entry',
             order: 50,
-            title: () => '行情',
-            description: () => '自选行情、持仓盈亏与涨跌提醒',
+            title: () => t('tab.title'),
+            description: () => t('guide.desc'),
           },
         ],
       }),
@@ -543,6 +568,7 @@ export function apply(ctx: any): void {
               moveToGroup: (symbol: string, groupId: string) => call('moveToGroup', symbol, groupId),
               setSortMode: (mode: string) => call('setSortMode', mode),
               updateSettings: (patch: Record<string, unknown>) => call('updateSettings', patch),
+              t,
             }),
           },
           (props: any) => <MarketBody {...props} />,
@@ -556,28 +582,24 @@ export function apply(ctx: any): void {
     () =>
       ctx.slots.inject('sidebar.right.pane.tab.title', () =>
         ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: MARKET_ID }, () => (
-          <span>行情</span>
+          <span>{t('tab.title')}</span>
         )),
       ),
     'market-watch: tab title',
   )
 
-  // 迷你条(FR-UI-02):shell.overlay(M0 实测可用挂载点),显示自选前 3 标的 + 持仓总收益率,点击打开行情 tab
+  // 迷你条(FR-UI-02):shell.overlay(M0 实测可用挂载点)
   ctx.effect(
     () =>
       ctx.slots.inject('shell.overlay', () =>
         ctx.slots.register(
           {
-          name: 'shell.overlay',
-          id: MARKET_ID,
-          order: 10,
-          inject: () => ({
-            fetchQuotes,
-            fetchHoldings,
-            open: () => ctx.sidebarRight.openTab(MARKET_KIND),
-          }),
-        },
-          (props: any) => <MiniBar fetchQuotes={props.fetchQuotes} fetchHoldings={props.fetchHoldings} />,
+            name: 'shell.overlay',
+            id: MARKET_ID,
+            order: 10,
+            inject: () => ({ fetchQuotes, fetchHoldings, t, open: () => ctx.sidebarRight.openTab(MARKET_KIND) }),
+          },
+          (props: any) => <MiniBar {...props} />,
         ),
       ),
     'market-watch: mini bar',
@@ -599,7 +621,7 @@ export function apply(ctx: any): void {
           (props: any) => (
             <button
               onClick={props.openMarket}
-              title="打开行情侧栏"
+              title={t('mini.open')}
               style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 14 }}
             >
               📈

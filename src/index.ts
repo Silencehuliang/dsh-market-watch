@@ -224,6 +224,7 @@ export function apply(ctx: Context) {
           changePercent: q?.changePercent ?? 0,
           asOf: q?.time ?? '',
           stale: q === undefined || q.stale === true,
+          status: q?.status ?? 'unknown',
         }
       }),
       settings.sortMode,
