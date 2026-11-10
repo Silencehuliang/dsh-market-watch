@@ -149,6 +149,25 @@ export function apply(ctx: any): void {
     'market-watch: tab title',
   )
 
+  // 常驻徽章(M0 的 shell.overlay,list slot 用 id)
+  ctx.effect(
+    () =>
+      ctx.slots.inject('shell.overlay', () =>
+        ctx.slots.register(
+          { name: 'shell.overlay', id: MARKET_ID, order: 10 },
+          () => (
+            <div
+              style={{ padding: '2px 8px', fontSize: 12, opacity: 0.85 }}
+              title="dsh-plugin-market-watch 已加载"
+            >
+              📈 market-watch
+            </div>
+          ),
+        ),
+      ),
+    'market-watch: overlay badge',
+  )
+
   // 会话页头一键打开入口(FR-UI-01)
   ctx.effect(
     () =>
@@ -157,6 +176,7 @@ export function apply(ctx: any): void {
           {
             name: 'conversation.session.header.actions',
             id: MARKET_ID,
+            order: 20,
             inject: () => ({
               openMarket: () => ctx.sidebarRight.openTab(MARKET_KIND),
             }),
