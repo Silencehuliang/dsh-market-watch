@@ -69,6 +69,14 @@
 - ✅ **数据源**:新浪 A 股/东财基金估值已用真实数据验证(§6);天天基金 `fundgz` 失效已用 `FundMNFInfo` 替代。
 - **M0 遗留**(随后续里程碑):迷你条候选位置实测、通知可达性验证(宿主侧全局通知)、简报 schedule 生命周期、桌面版 npm 包安装(需发布)。
 
+## 10. T12 侧栏 tab 实机验证(2026-11-10,通过)
+
+- ✅ **全链路验证**(playwright 自动化实测,dsh web @8123 + token 信任 URL):右侧栏引导页出现「行情」入口盒 → 点击打开 tab(selected)→ 列表渲染真实行情(贵州茅台 cn_sh:600519,1436.74 / −0.57%)→ Console 零错误零警告。
+- ⚠️ **关键约束:sidebar tab 是 per-session 的**——`SidebarRightController.openTab(kind)` 内部 `this.require()` 取 on-screen session,**无活动会话时点击入口静默无反应**(dsh 设计,非 bug)。入口可用性依赖「已有会话」。引导页入口(guides)+ 会话页头按钮(`conversation.session.header.actions`,session 作用域)均已注册;页头按钮需在真实会话视图中确认渲染。
+- ⚠️ **slot 注册格式坑**:list 型 slot(`shell.overlay`、`conversation.session.header.actions`)必须用 `options.id`,keyed 型 slot(`sidebar.right.pane.tab`)用 `options.key`;用错直接抛错并回滚整个客户端插件。
+- ⚠️ **客户端 inject 依赖链**:`dsh-api-remotes` 需要 `dsh-api-gateway`;tab 注册需要 `dsh-client-ui-sidebar-right` + `dsh-client-ui-conversation`。缺失时整个客户端半区静默不加载。
+- dsh web 认证:CLI 打印 `?token=...` 信任 URL;自动化测试需带 token 访问。
+
 ## 6. M0 数据源实测(2026-11-09)
 
 | 数据源 | 地址 | 结果 |

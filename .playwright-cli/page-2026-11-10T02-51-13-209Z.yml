@@ -1,0 +1,66 @@
+- generic [ref=f1e4]:
+  - generic [ref=f1e7]:
+    - generic [ref=f1e8]:
+      - button "新建会话" [ref=f1e9] [cursor=pointer]
+      - button "收起侧边栏" [ref=f1e38] [cursor=pointer]
+    - button "新建会话" [ref=f1e41] [cursor=pointer]:
+      - generic [ref=f1e42]: 新会话
+      - generic [aria-hidden]:
+        - generic:
+          - generic: Ctrl
+          - generic: +
+          - generic: Alt
+          - generic: +
+          - generic: "N"
+    - navigation "全局面板" [ref=f1e47]:
+      - button "插件" [ref=f1e48] [cursor=pointer]
+      - button "自动化任务" [ref=f1e57] [cursor=pointer]
+      - button "更多" [ref=f1e65] [cursor=pointer]
+    - generic [ref=f1e75]:
+      - generic [ref=f1e76]:
+        - generic [ref=f1e77]: 工作区
+        - generic [ref=f1e79]:
+          - button "搜索会话" [ref=f1e80] [cursor=pointer]
+          - textbox "搜索会话名称"
+        - generic [ref=f1e84]:
+          - button "视图选项" [ref=f1e86] [cursor=pointer]
+          - button "添加工作区" [ref=f1e90] [cursor=pointer]
+      - tree "会话" [ref=f1e95]:
+        - treeitem "warp-masque-actions" [ref=f1e98] [cursor=pointer]
+        - treeitem "bilibili_work" [ref=f1e106] [cursor=pointer]
+        - treeitem "my_blog" [ref=f1e114] [cursor=pointer]
+        - treeitem "buddy_account_switch" [ref=f1e122] [cursor=pointer]
+        - treeitem "gj" [ref=f1e130] [cursor=pointer]
+        - treeitem "Developer Workbench" [ref=f1e138] [cursor=pointer]
+        - treeitem "workbuddy2api-panel" [ref=f1e146] [cursor=pointer]
+        - treeitem "WorkStation" [ref=f1e154] [cursor=pointer]
+        - treeitem "Goal Dashboard" [ref=f1e162] [cursor=pointer]
+        - treeitem "CFNext" [ref=f1e170] [cursor=pointer]
+        - treeitem "workflows" [ref=f1e178] [cursor=pointer]
+        - treeitem "gj" [ref=f1e186] [cursor=pointer]
+        - treeitem "gj-codex" [ref=f1e194] [cursor=pointer]
+        - treeitem "work_station_zcode" [ref=f1e202] [cursor=pointer]
+        - treeitem "work_station_dsh" [ref=f1e210] [cursor=pointer]
+        - treeitem "dsh-cj" [ref=f1e218] [cursor=pointer]
+        - treeitem "gj-dsh" [ref=f1e226] [cursor=pointer]
+        - treeitem "test4" [ref=f1e234] [cursor=pointer]
+    - button "账号菜单" [ref=f1e247] [cursor=pointer]:
+      - generic [ref=f1e252]: 更多
+  - generic [ref=f1e256]:
+    - generic:
+      - banner
+    - generic [ref=f1e262]:
+      - generic [ref=f1e270]:
+        - generic [ref=f1e271]: 探索未至之境
+        - generic [ref=f1e272]: 预览版
+      - button "选择工作区" [ref=f1e274] [cursor=pointer]
+      - generic [ref=f1e282] [cursor=pointer]:
+        - generic [ref=f1e284]:
+          - textbox "选择工作区" [ref=f1e285]
+          - generic [aria-hidden]: 选择一个工作区开始
+        - generic [ref=f1e286]:
+          - generic [ref=f1e287]:
+            - button "添加文件或调用指令" [disabled]
+          - generic [ref=f1e288]:
+            - button "发送消息" [disabled]
+  - generic "dsh-plugin-market-watch 已加载" [ref=f1e290]: 📈 market-watch
