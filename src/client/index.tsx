@@ -148,7 +148,7 @@ export function apply(ctx: any): void {
         ctx.slots.register(
           {
             name: 'conversation.session.header.actions',
-            key: MARKET_ID,
+            id: MARKET_ID,
             inject: () => ({
               openMarket: () => ctx.sidebarRight.openTab(MARKET_KIND),
             }),
