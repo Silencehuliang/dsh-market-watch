@@ -7,6 +7,8 @@ import { QuoteService } from './core/quote-service.js'
 import { fetchSinaStocks } from './core/providers/sina.js'
 import { fetchFundEstimates } from './core/providers/eastmoney.js'
 import { normalizeSymbol, parseSymbol } from './core/symbol.js'
+import { marketStatus } from './core/calendar.js'
+// 轮询/UI 刷新用 isMarketOpenNow 判断(FR-DATA-07:节假日不发起高频轮询)
 import { evaluatePosition, sharesFromAmount } from './core/portfolio.js'
 import type { PositionResult } from './core/portfolio.js'
 import type { Quote, SymbolId } from './core/types.js'
@@ -121,7 +123,9 @@ export function apply(ctx: Context) {
     const out: Quote[] = []
     if (stockRes.status === 'fulfilled') out.push(...stockRes.value)
     if (fundRes.status === 'fulfilled') out.push(...fundRes.value)
-    return out
+    // 由交易日历填充 status(FR-DATA-07):open/closed/pre/post
+    const now = new Date()
+    return out.map((q) => ({ ...q, status: marketStatus(parseSymbol(q.symbol).market, now) }))
   }
 
   /** 收盘保持:上次盈亏结果缓存(price≤0 时 evaluatePosition 保持它)。 */
