@@ -82,6 +82,8 @@ const marketWatchSpec = defineDomain({
       miniBarSymbols: z.array(z.string()).default([]),
       // FR-ALERT-06:Webhook 推送(默认关闭;地址视为敏感信息仅本地存储)
       webhookUrl: z.string().default(''),
+      // #37:brief_schedule 幂等记录(kind → 上次创建的 daily time)
+      schedules: z.record(z.string(), z.string()).default({}),
     }),
     initial: {
       intervalMs: 5000,
@@ -157,11 +159,6 @@ export function apply(ctx: Context) {
     { markets: ['fund'], service: fundQuotes, source: 'eastmoney' },
   ]
 
-  const serviceFor = (symbol: SymbolId): QuoteService => {
-    const market = parseSymbol(symbol).market
-    return quoteRoutes.find((r) => r.markets.includes(market))!.service
-  }
-
   /** 按路由表分发。休市市场不发网络请求(FR-DATA-07),用缓存收盘价;无缓存的标的强制取一次。 */
   async function getQuotes(symbols: SymbolId[]): Promise<Quote[]> {
     const now = new Date()
@@ -203,6 +200,11 @@ export function apply(ctx: Context) {
     if (!settings.alertsEnabled) return
     const rules = Array.from(domain.table('alerts').entries()).filter(([, r]) => r.enabled)
     if (rules.length === 0) return
+    // 基线残留清理:规则被删除/覆盖后,prevAlertValues 里的旧 id 不再参与评估(评审遗留项)
+    const ruleIds = new Set(rules.map(([id]) => id))
+    for (const id of prevAlertValues.keys()) {
+      if (!ruleIds.has(id)) prevAlertValues.delete(id)
+    }
     const symbols = [...new Set(rules.map(([, r]) => r.symbol))] as never[]
     const quotes = await getQuotes(symbols)
     const bySymbol = new Map(quotes.map((q) => [q.symbol, q]))
@@ -305,43 +307,55 @@ export function apply(ctx: Context) {
     const quoteBySymbol = new Map(quotes.map((q) => [q.symbol, q]))
     const needFx = quotes.some((q) => q.currency && q.currency !== 'CNY')
     const rates = needFx ? await getFxRates() : null
+    // #37:组合总收益率在宿主侧按内部金额计算——百分比不是敏感量,隐私模式也能返回
+    let totalValue = 0
+    let totalCost = 0
+    const items = entries.map(([symbol, h]) => {
+      const quote = quoteBySymbol.get(symbol as never)
+      const hasPrice = (quote?.price ?? 0) > 0
+      const r = evaluatePosition(
+        { shares: h.shares ?? 0, costPrice: h.costPrice ?? h.costNav ?? 0, closed: h.closed },
+        { price: quote?.price ?? 0, prevClose: quote?.prevClose ?? 0 },
+        prevResults.get(symbol as never),
+      )
+      if (hasPrice) prevResults.set(symbol as never, r)
+      const currency = quote?.currency ?? 'CNY'
+      const rate = currency !== 'CNY' ? (rates?.[currency] ?? null) : null
+      // FR-WL-06:外币持仓折算人民币(rate 缺失时降级为原币值并标注)
+      const toCny = (v: number) => (rate !== null ? v * rate : v)
+      const base = {
+        symbol,
+        name: quote?.name,
+        profitRate: r.profitRate,
+        isClosed: r.isClosed,
+        // 币种不是敏感量,两种模式都下发(UI 显示 USD/HKD 标注,#33 修复:此前被 remote schema 剥离)
+        ...(currency !== 'CNY' ? { currency } : {}),
+        ...(currency !== 'CNY' && rate === null ? { fxMissing: true } : {}), // 汇率缺失降级标注(审查修复)
+      }
+      // 总收益率分母/分子:汇率缺失的外币持仓不参与(避免混币种相加);清仓与无价格跳过
+      if (!r.isClosed && hasPrice && (currency === 'CNY' || rate !== null)) {
+        const rateCny = currency === 'CNY' ? 1 : rate!
+        totalValue += r.marketValue * rateCny
+        totalCost += (h.costPrice ?? h.costNav ?? 0) * (h.shares ?? 0) * rateCny
+      }
+      if (!expose) return base
+      return {
+        ...base,
+        currency,
+        fxRate: rate ?? undefined,
+        shares: h.shares,
+        amount: h.amount,
+        costPrice: h.costPrice,
+        costNav: h.costNav,
+        dayProfit: toCny(r.dayProfit),
+        cumProfit: toCny(r.cumProfit),
+        marketValue: toCny(r.marketValue),
+      }
+    })
     return {
-      items: entries.map(([symbol, h]) => {
-        const quote = quoteBySymbol.get(symbol as never)
-        const hasPrice = (quote?.price ?? 0) > 0
-        const r = evaluatePosition(
-          { shares: h.shares ?? 0, costPrice: h.costPrice ?? h.costNav ?? 0, closed: h.closed },
-          { price: quote?.price ?? 0, prevClose: quote?.prevClose ?? 0 },
-          prevResults.get(symbol as never),
-        )
-        if (hasPrice) prevResults.set(symbol as never, r)
-        const currency = quote?.currency ?? 'CNY'
-        const rate = currency !== 'CNY' ? (rates?.[currency] ?? null) : null
-        // FR-WL-06:外币持仓折算人民币(rate 缺失时降级为原币值并标注)
-        const toCny = (v: number) => (rate !== null ? v * rate : v)
-        const base = {
-          symbol,
-          name: quote?.name,
-          profitRate: r.profitRate,
-          isClosed: r.isClosed,
-          // 币种不是敏感量,两种模式都下发(UI 显示 USD/HKD 标注,#33 修复:此前被 remote schema 剥离)
-          ...(currency !== 'CNY' ? { currency } : {}),
-          ...(currency !== 'CNY' && rate === null ? { fxMissing: true } : {}), // 汇率缺失降级标注(审查修复)
-        }
-        if (!expose) return base
-        return {
-          ...base,
-          currency,
-          fxRate: rate ?? undefined,
-          shares: h.shares,
-          amount: h.amount,
-          costPrice: h.costPrice,
-          costNav: h.costNav,
-          dayProfit: toCny(r.dayProfit),
-          cumProfit: toCny(r.cumProfit),
-          marketValue: toCny(r.marketValue),
-        }
-      }),
+      items,
+      // 百分比-only:金额不离开宿主,隐私模式同样可用(README 迷你条「持仓总收益率」兑现)
+      totalProfitRate: totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : null,
     }
   }
 
@@ -518,7 +532,7 @@ export function apply(ctx: Context) {
     defineTool({
       name: 'market_quote',
       description:
-        '查询行情,返回现价、涨跌额、涨跌幅等;A股/港股/美股另含盘口一档(bid1/ask1)与委比(orderBookRatio,%),源未提供时省略:A股、港股、美股、期货(国内/国际)、外汇。数据来自公开网页接口,可能延迟,不构成投资建议。',
+        '查询行情,返回 { quotes: [...], missing: [未取到数据的标的] }:现价、涨跌额、涨跌幅等;A股/港股/美股另含盘口一档(bid1/ask1)与委比(orderBookRatio,%),源未提供时省略:A股、港股、美股、期货(国内/国际)、外汇。数据来自公开网页接口,可能延迟,不构成投资建议。',
       parameters: {
         symbols: {
           type: 'array',
@@ -529,10 +543,14 @@ export function apply(ctx: Context) {
       },
       output: jsonOutput,
       async execute(args: { symbols: string[] }) {
-        const symbols = args.symbols.map((s) => normalizeSymbol(s))
+        // #36:重复符号去重;无法取到行情的符号不再静默消失,以 missing 明确返回
+        const symbols = [...new Set(args.symbols.map((s) => normalizeSymbol(s)))]
         const quotes = await getQuotes(symbols)
-        return toJson(
-          quotes.map((q) => ({
+        const found = new Set(quotes.map((q) => q.symbol))
+        const missing = symbols.filter((s) => !found.has(s))
+        return toJson({
+          missing,
+          quotes: quotes.map((q) => ({
             symbol: q.symbol,
             name: q.name,
             price: q.price,
@@ -546,7 +564,7 @@ export function apply(ctx: Context) {
             source: q.source,
             stale: q.stale ?? false,
           })),
-        )
+        })
       },
     }),
   )
@@ -566,6 +584,9 @@ export function apply(ctx: Context) {
       },
       output: jsonOutput,
       async execute(args: { codes: string[] }) {
+        // #36:基金代码格式校验(6 位数字),防误拼与 URL 注入
+        const bad = args.codes.filter((c) => !/^\d{6}$/.test(c))
+        if (bad.length > 0) return toJson({ error: `invalid fund code(s), expect 6 digits: ${bad.join(', ')}` })
         const estimates = await fetchFundEstimates(args.codes)
         return toJson(
           estimates.map((e) => ({
@@ -609,17 +630,28 @@ export function apply(ctx: Context) {
   ctx.tools.register(
     defineTool({
       name: 'watchlist_add',
-      description: '添加标的到自选(幂等)。数据来自公开接口,不构成投资建议。',
+      description: '添加标的到自选(幂等)。group 可传内置分组 id 或自定义分组名,不存在时自动创建。数据来自公开接口,不构成投资建议。',
       parameters: {
         symbol: { type: 'string', required: true, description: '标的代码,如 sh600519、110022' },
         name: { type: 'string', description: '标的名称(可选)' },
-        group: { type: 'string', description: '分组 id(可选,默认按市场归类)' },
+        group: { type: 'string', description: '分组(id 或名称,可选,默认按市场归类;自定义组不存在时自动创建)' },
       },
       output: jsonOutput,
       async execute(args: { symbol: string; name?: string; group?: string }) {
         if (!domain) return toJson({ error: 'storage not ready' })
         const r = await addToWatchlistCore(args.symbol, args.name)
-        if (r.added && args.group) await moveToGroupCore(r.symbol, args.group) // group 参数:添加后归组
+        if (r.added && args.group) {
+          // #37:分组存在性校验——内置组必须存在;自定义组不存在则按名称自动创建(幂等)
+          const g = args.group
+          const isBuiltin = BUILTIN_GROUPS.some((b) => b.id === g)
+          if (isBuiltin) {
+            await moveToGroupCore(r.symbol, g)
+          } else {
+            const name = g.startsWith('custom:') ? g.slice('custom:'.length) : g
+            await createGroupCore(name) // 已存在时不重复创建
+            await moveToGroupCore(r.symbol, `custom:${name}`)
+          }
+        }
         return toJson({ symbol: r.symbol, added: r.added })
       },
     }),
@@ -788,19 +820,27 @@ export function apply(ctx: Context) {
     defineTool({
       name: 'brief_schedule',
       description:
-        '在当前会话创建每日定时简报任务(默认盘前 09:15 / 盘后 15:10,Asia/Shanghai)。触发时由模型调用 brief_generate 整理简报;休市日简报自动返回「休市」。投递绑定创建时的会话(生命周期见 verification.md)。',
+        '在当前会话创建每日定时简报任务(默认盘前 09:15 / 盘后 15:10,Asia/Shanghai)。触发时由模型调用 brief_generate 工具整理简报;休市日简报自动返回「休市」。同 kind 同时间重复调用幂等(不重复创建);同 kind 改时间会创建新任务并在结果中标注 previousTime。投递绑定创建时的会话(生命周期见 verification.md)。',
       parameters: {
         kind: { type: 'string', required: true, description: 'pre_open 或 post_close' },
         time: { type: 'string', description: 'HH:mm(可选,默认 09:15/15:10)' },
       },
       output: jsonOutput,
       async execute(args: { kind: string; time?: string }) {
+        if (!domain) return toJson({ error: 'storage not ready' })
         const kind = args.kind === 'pre_open' ? 'pre_open' : 'post_close'
         const time = `${args.time ?? (kind === 'pre_open' ? '09:15' : '15:10')}:00`
         const prompt =
           kind === 'pre_open'
             ? '现在是盘前,请调用 brief_generate 工具(kind=pre_open)获取简报数据并整理成简洁的盘前简报;若返回 closed=true,告知用户今日休市。'
             : '现在已收盘,请调用 brief_generate 工具(kind=post_close)获取简报数据并整理成简洁的收盘简报(含持仓盈亏);若返回 closed=true,告知用户今日休市。'
+        // #37:同 kind 同时间幂等——重复调用不再堆积定时任务
+        const schedulesMap =
+          (domain.global.get() as { schedules?: Record<string, string> }).schedules ?? {}
+        const recorded = schedulesMap[kind]
+        if (recorded === time) {
+          return toJson({ created: false, duplicate: true, kind, time })
+        }
         try {
           // ctx.schedule 类型扩展在 dsh-schedule 包(未装 devDep),运行时由 dsh 提供
           const scheduleSvc = (ctx as unknown as {
@@ -811,7 +851,10 @@ export function apply(ctx: Context) {
             prompt,
             daily: { time, time_zone: 'Asia/Shanghai' },
           })
-          return toJson({ created: true, kind, time, schedule })
+          await setGlobal({
+            schedules: { ...schedulesMap, [kind]: time },
+          })
+          return toJson({ created: true, kind, time, previousTime: recorded ?? undefined, schedule })
         } catch (e) {
           return toJson({
             error: `schedule create failed: ${e instanceof Error ? e.message : String(e)}`,
@@ -860,6 +903,8 @@ export function apply(ctx: Context) {
       },
       output: jsonOutput,
       async execute(args: { code: string; days?: number }) {
+        // #36:基金代码格式校验
+        if (!/^\d{6}$/.test(args.code)) return toJson({ error: `invalid fund code, expect 6 digits: ${args.code}` })
         const list = await fetchFundHistory(args.code, args.days ?? 20)
         return toJson({ code: args.code, list })
       },
@@ -967,6 +1012,8 @@ export function apply(ctx: Context) {
         return toJson({
           generatedAt: now.toISOString(),
           items: markets.map((m) => {
+            // #36:未知市场明确报错,而非误报「open」
+            if (!ALL.includes(m)) return { market: m, error: `unknown market, valid: ${ALL.join('/')}` }
             const status = marketStatus(m, now)
             return { market: m, status, isOpen: status === 'open', nextOpenAt: nextMarketOpen(m, now) }
           }),

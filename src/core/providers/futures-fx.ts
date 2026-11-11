@@ -11,6 +11,19 @@ import { fetchGb18030, parseNum } from './http.js'
 // 实测修复:body 形态此前前导引号未剥离,首字段解析 NaN 导致全部期货行情被丢弃(实机测试发现)
 const csv = (raw: string): string[] => raw.replace(/^(var\s+hq_str_\w+=)?"|";?\s*$/g, '').split(',')
 
+/** 抓取时刻(北京时间,与新浪源时间戳口径一致;此前误用 UTC)。 */
+const nowBeijing = (): string =>
+  new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date())
+
 /** 国内期货(nf_):昨收 = 昨结算价。 */
 export function parseCnFuturesQuote(symbol: SymbolId, raw: string): Quote | null {
   const f = csv(raw)
@@ -29,7 +42,7 @@ export function parseCnFuturesQuote(symbol: SymbolId, raw: string): Quote | null
     prevClose: prevSettle,
     volume: parseNum(f[4]),
     amount: parseNum(f[5]),
-    time: new Date().toISOString().slice(0, 19).replace('T', ' '),
+    time: nowBeijing(), // 抓取时刻(北京时间;源不提供逐笔时间戳)
     status: 'unknown',
     source: 'sina-futures',
   }

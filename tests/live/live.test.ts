@@ -178,10 +178,10 @@ d('实机:金十快讯与资金流', () => {
   it('沪深港通(#34):北向仅总成交额、南向净买入可信(= 买−卖)', async () => {
     const { south, north } = await fetchHsgDaily()
     expect(north.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(north.turnoverCny).toBeGreaterThan(0)
+    // 盘前当日字段可能为 0(未开盘),只断言有限值与合理区间
+    expect(north.turnoverCny).toBeGreaterThanOrEqual(0)
     expect(north.turnoverCny).toBeLessThan(10000) // 北向日总成交额合理区间
     expect(Math.abs(south.netCny)).toBeLessThan(1000) // 南向净买入不可能是「额度整数倍」占位值
-    expect(south.turnoverCny).toBeGreaterThan(0)
     console.log(`[live] hsg ${south.date} 北向总成交=${north.turnoverCny.toFixed(1)}亿 南向净买入=${south.netCny.toFixed(2)}亿`)
     await sleep(300)
   }, 20_000)

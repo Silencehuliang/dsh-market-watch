@@ -64,7 +64,7 @@ dsh plugin --profile web add dsh-plugin-market-watch
 
 | 工具 | 参数 | 说明 |
 | --- | --- | --- |
-| `market_quote` | `symbols[]` | 批量行情:现价/涨跌额/涨跌幅/开高低/昨收/量额;A股/港股/美股另含 `bid1`/`ask1` 与委比 `orderBookRatio(%),源未提供时省略 |
+| `market_quote` | `symbols[]` | 批量行情,返回 `{ quotes, missing }`(未取到数据的标的进 `missing`,不再静默消失):现价/涨跌额/涨跌幅/开高低/昨收/量额;A股/港股/美股另含 `bid1`/`ask1` 与委比 `orderBookRatio(%),源未提供时省略 |
 | `market_fund_estimate` | `codes[]` | 基金盘中估值(约延迟 2 分钟,强制标注「估值」) |
 | `market_search` | `q` | 名称/代码模糊搜索,返回市场/类型候选 |
 | `market_kline` | `symbol`, `range?(1w/1m/3m/6m/1y)`, `format?(json/csv)` | 日 K 前复权;csv 格式节省 token |
@@ -81,9 +81,9 @@ dsh plugin --profile web add dsh-plugin-market-watch
 
 | 工具 | 说明 |
 | --- | --- |
-| `watchlist_add` / `watchlist_list` / `watchlist_remove` | 自选增删查,重复添加幂等 |
+| `watchlist_add` / `watchlist_list` / `watchlist_remove` | 自选增删查,重复添加幂等;`group` 传自定义分组名时不存在则自动创建 |
 | `holdings_set` | 录入持仓:股票成本价/数量/清仓;基金份额或金额(只有金额时按成本净值反推份额) |
-| `holdings_get` | 持仓与盈亏查询(**默认隐私模式只返回百分比**,金额不出模型上下文) |
+| `holdings_get` | 持仓与盈亏查询(**默认隐私模式只返回百分比与组合总收益率**,金额不出模型上下文) |
 | `portfolio_summary` | 组合汇总:当日/累计盈亏、总收益率、涨跌分布、最大波动标的(受隐私模式限制) |
 
 ### alert_ / brief_ — 提醒与简报
@@ -92,7 +92,7 @@ dsh plugin --profile web add dsh-plugin-market-watch
 | --- | --- |
 | `alert_set` / `alert_list` / `alert_delete` / `alert_ack` | 提醒规则 CRUD;规则形如 `cn_sh:600519\|price\|up`,含最近触发信息;`alert_ack` 清除未读角标 |
 | `brief_generate` | `kind=pre_open/post_close`;休市日返回 `closed=true`;盘后简报含持仓盈亏(已按隐私过滤、外币已折人民币) |
-| `brief_schedule` | `kind`, `time?(默认 09:15/15:10)`;基于 `ctx.schedule` 的每日任务,投递绑定创建时的会话 |
+| `brief_schedule` | `kind`, `time?(默认 09:15/15:10)`;基于 `ctx.schedule` 的每日任务,投递绑定创建时的会话;同 kind 同时间**幂等**(不重复堆积任务) |
 | `share_card` | SVG 收益榜卡片(仅百分比与涨跌排行) |
 
 ## 配置参考
@@ -121,7 +121,7 @@ dsh plugin --profile web add dsh-plugin-market-watch
 
 可靠性模型(**单源可靠 + 缓存兜底**,ADR-0001):不堆砌多源适配器,可靠性来自——
 
-- 主源失败(HTTP 429/403、超时、解析异常)时进入 60 秒冷却期,期间直接读缓存不再请求;
+- 出站请求**按主机限频 ≤5 req/s**;主源失败(HTTP 429/403、超时、解析异常)进入**指数退避冷却期**(2^n,限频错误加倍,封顶 16×基准),期间直接读缓存不再请求;
 - 主源失败时返回过期缓存并标注 `stale`,UI 标注「已过期/估值/已收盘」,不被延迟数据误导;
 - 休市市场不发高频轮询(FR-DATA-07):内置 2026 年 A 股节假日表 + 行情时间戳纠正,节假日/午休/收盘后自动降频。
 
@@ -162,7 +162,6 @@ dsh plugin --profile web add dsh-plugin-market-watch
 - 免费接口无 SLA,可能限频、改版或随时失效(缓解见「可靠性」);
 - 交易日历为内置 2026 年 A 股节假日表,次年需手动更新;
 - 期货/外汇标的在侧栏归入「其他」分组;
-- 迷你条的「持仓总收益率」依赖金额计算,默认隐私模式下不显示(百分比-only 数据不足以加权汇总);
 - 免费搜索接口按裸代码/名称匹配:`usAAPL` 这类带市场前缀的查询无结果;
 - 桌面版(Electron)安装链路需 npm 发布后实测;桌面 profile 由应用内置管理,CLI 不直接操作;
 - 不做:交易下单、券商接入、量化回测、买卖建议、数字货币视图、移动端。

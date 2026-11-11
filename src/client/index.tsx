@@ -51,7 +51,7 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 /** 常驻迷你条(FR-UI-02):自选前 3 标的 + 总收益率;点击打开行情 tab。 */
-function MiniBar(props: any) {
+export function MiniBar(props: any) {
   const [data, setData] = useState<{
     items: any[]
     totalRate: number | null
@@ -68,14 +68,11 @@ function MiniBar(props: any) {
         riseColor?: string
         settings?: { miniBarSymbols?: string[]; alertsUnread?: number }
       }
-      const h = (await props.fetchHoldings()) as { items: any[] }
+      const h = (await props.fetchHoldings()) as {
+        items: any[]
+        totalProfitRate?: number | null
+      }
       const holdingItems = h.items.filter((i) => !i.isClosed)
-      // 外币成本按汇率折算后再汇总(与 portfolio_summary 同口径;#33 修复:此前 CNY 市值对 USD 成本,总收益率失真)
-      const totalCost = holdingItems.reduce(
-        (s, i) => s + (i.costPrice ?? i.costNav ?? 0) * (i.shares ?? 0) * (i.fxRate ?? 1),
-        0,
-      )
-      const totalValue = holdingItems.reduce((s, i) => s + (i.marketValue ?? 0), 0)
       const fxMissingAny = holdingItems.some((i) => i.fxMissing)
       // 迷你条标的配置生效(FR-UI-05):设置过 miniBarSymbols 则按其选取,否则取自选前 3
       const pref: string[] = q.settings?.miniBarSymbols ?? []
@@ -87,7 +84,8 @@ function MiniBar(props: any) {
         : q.items.slice(0, 3)
       setData({
         items: chosen,
-        totalRate: holdingItems.length > 0 && totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : null,
+        // #37:总收益率由宿主侧按内部金额计算(百分比-only),默认隐私模式同样可用
+        totalRate: h.totalProfitRate ?? null,
         fxMissingAny,
         riseColor: q.riseColor ?? 'red',
         alertsUnread: q.settings?.alertsUnread ?? 0,
@@ -169,7 +167,7 @@ function MiniBar(props: any) {
 }
 
 /** 详情视图(FR-UI-04 精简版):K线 SVG 折线(零依赖)+ 基金历史净值。 */
-function DetailView(props: any) {
+export function DetailView(props: any) {
   const [bars, setBars] = useState<any[] | null>(null)
   const [navs, setNavs] = useState<any[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -410,7 +408,8 @@ function MarketBody(props: any) {
     padding: '0 4px',
   }
 
-  if (error) {
+  if (error && items === null) {
+    // 首次加载失败:整面板错误态
     return (
       <div style={{ padding: 14, fontSize: 13, opacity: 0.8 }}>
         {t('err.load')}
@@ -431,6 +430,13 @@ function MarketBody(props: any) {
 
   return (
     <div>
+      {error && items !== null && (
+        // 轮询瞬态失败:保留上次数据,仅顶部提示(评审遗留项:此前整个列表被错误面板替换)
+        <div style={{ padding: '4px 10px', fontSize: 11, color: RED }}>
+          {t('err.load')}
+          {error}
+        </div>
+      )}
       <div style={{ ...rowStyle, borderBottom: 'none' }}>
         <span style={{ fontWeight: 600, fontSize: 12, opacity: 0.7 }}>{t('wl.title')}</span>
         <div style={{ display: 'flex', gap: 4 }}>

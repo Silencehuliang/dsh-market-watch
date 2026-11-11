@@ -107,7 +107,13 @@ export const holdingsItemSchema = z
   })
   .readonly()
 
-export const holdingsResultSchema = z.object({ items: z.array(holdingsItemSchema) }).readonly()
+export const holdingsResultSchema = z
+  .object({
+    items: z.array(holdingsItemSchema),
+    // #37:宿主侧按内部金额计算的组合总收益率(百分比-only,隐私模式同样返回;null=无有效成本)
+    totalProfitRate: z.number().nullable().optional(),
+  })
+  .readonly()
 
 export type WatchlistResult = z.infer<typeof watchlistResultSchema>
 export type HoldingsResult = z.infer<typeof holdingsResultSchema>

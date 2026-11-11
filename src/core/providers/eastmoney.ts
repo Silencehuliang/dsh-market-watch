@@ -1,4 +1,5 @@
 import type { FundEstimate } from '../types.js'
+import { fetchJson } from './http.js'
 
 export const EASTMONEY_ID = 'eastmoney'
 
@@ -18,14 +19,11 @@ export function parseFundEstimate(item: Record<string, unknown>): FundEstimate {
   }
 }
 
-/** 请求东方财富基金估值(宿主侧网络)。收盘后 GSZ/GSZZL/GZTIME 为 null。 */
+/** 请求东方财富基金估值(宿主侧网络,限频)。收盘后 GSZ/GSZZL/GZTIME 为 null。 */
 export async function fetchFundEstimates(codes: string[]): Promise<FundEstimate[]> {
-  const res = await fetch(
+  const json = await fetchJson<{ Datas?: Record<string, unknown>[] }>(
     `https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?pageIndex=1&pageSize=${codes.length}&plat=Wap&deviceid=Wap&product=EFund&version=2.0.0&Fcodes=${codes.join(',')}`,
-    { signal: AbortSignal.timeout(8000) },
   )
-  if (!res.ok) throw new Error(`eastmoney http ${res.status}`)
-  const json = (await res.json()) as { Datas?: Record<string, unknown>[] }
   const datas = json.Datas ?? []
   return datas.map(parseFundEstimate)
 }

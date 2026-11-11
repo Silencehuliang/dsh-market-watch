@@ -266,11 +266,12 @@ describe('market_quote:路由 / 标注 / 兜底', () => {
     const h = await setup()
     fetchSinaStocks.mockResolvedValue([sinaQuote('cn_sh:600519', 1500, 1480)])
     fetchTencentQuotes.mockResolvedValue([tencentQuote('hk:00700', 300, 295, 'HKD'), tencentQuote('us:AAPL.OQ', 200, 198, 'USD')])
-    const r = (await h.call('market_quote', { symbols: ['sh600519', 'hk00700', 'us:AAPL.OQ'] })) as any[]
-    expect(r).toHaveLength(3)
-    const sh = r.find((x) => x.symbol === 'cn_sh:600519')!
-    const hk = r.find((x) => x.symbol === 'hk:00700')!
-    const us = r.find((x) => x.symbol === 'us:AAPL.OQ')!
+    const r = (await h.call('market_quote', { symbols: ['sh600519', 'hk00700', 'us:AAPL.OQ'] })) as any
+    expect(r.missing).toEqual([])
+    expect(r.quotes).toHaveLength(3)
+    const sh = r.quotes.find((x: any) => x.symbol === 'cn_sh:600519')!
+    const hk = r.quotes.find((x: any) => x.symbol === 'hk:00700')!
+    const us = r.quotes.find((x: any) => x.symbol === 'us:AAPL.OQ')!
     expect(sh.source).toBe('sina')
     expect(sh.asOf).toBe('2026-11-18 10:00:00')
     expect(sh.delayed).toBe(false)
@@ -292,19 +293,23 @@ describe('market_quote:路由 / 标注 / 兜底', () => {
       estimateNav: e.GSZ, estimatePercent: e.GSZZL, estimateTime: e.GZTIME,
       isEstimate: true as const, source: 'eastmoney',
     })))
-    const r = (await h.call('market_quote', { symbols: ['nf_IF0', 'fx_susdcny', '110022'] })) as any[]
-    expect(r.map((x) => x.symbol)).toEqual(['fut_cn:IF0', 'fx:SUSDCNY', 'fund:110022'])
-    expect(r[0]!.source).toBe('sina-futures')
-    expect(r[2]!.price).toBe(4.6)
-    expect(r[2]!.delayed).toBe(true) // 基金估值强制 delayed
+    const r = (await h.call('market_quote', { symbols: ['nf_IF0', 'fx_susdcny', '110022'] })) as any
+    expect(r.quotes.map((x: any) => x.symbol)).toEqual(['fut_cn:IF0', 'fx:SUSDCNY', 'fund:110022'])
+    expect(r.quotes[0]!.source).toBe('sina-futures')
+    expect(r.quotes[2]!.price).toBe(4.6)
+    expect(r.quotes[2]!.delayed).toBe(true) // 基金估值强制 delayed
     h.dispose()
   })
 
-  it('未知标的被静默丢弃(行为记录:无错误信息)', async () => {
+  it('#36 修复回归:未知标的进入 missing,不再静默消失', async () => {
     const h = await setup()
-    fetchSinaStocks.mockResolvedValue([])
-    const r = (await h.call('market_quote', { symbols: ['sh999999'] })) as any[]
-    expect(r).toEqual([])
+    fetchSinaStocks.mockResolvedValue([sinaQuote('cn_sh:600519', 1500, 1480)])
+    const r = (await h.call('market_quote', { symbols: ['sh999999', 'sh600519'] })) as any
+    expect(r.missing).toEqual(['cn_sh:999999'])
+    expect(r.quotes.map((q: any) => q.symbol)).toEqual(['cn_sh:600519'])
+    // 重复符号去重
+    const d = (await h.call('market_quote', { symbols: ['sh600519', 'sh600519'] })) as any
+    expect(d.missing).toEqual([])
     h.dispose()
   })
 
@@ -313,10 +318,10 @@ describe('market_quote:路由 / 标注 / 兜底', () => {
     fetchSinaStocks.mockResolvedValueOnce([sinaQuote('cn_sh:600519', 1500, 1480)])
     await h.call('market_quote', { symbols: ['sh600519'] })
     fetchSinaStocks.mockRejectedValueOnce(new Error('boom'))
-    const r = (await h.call('market_quote', { symbols: ['sh600519'] })) as any[]
-    expect(r[0]!.price).toBe(1500)
-    expect(r[0]!.stale).toBe(true)
-    expect(r[0]!.delayed).toBe(true)
+    const r = (await h.call('market_quote', { symbols: ['sh600519'] })) as any
+    expect(r.quotes[0]!.price).toBe(1500)
+    expect(r.quotes[0]!.stale).toBe(true)
+    expect(r.quotes[0]!.delayed).toBe(true)
     const diag = (await h.call('market_diagnostics')) as any
     const sina = diag.sources.find((s: any) => s.source === 'sina')
     expect(sina.lastError).toContain('boom')
@@ -332,10 +337,10 @@ describe('market_quote:路由 / 标注 / 兜底', () => {
     await h.call('market_quote', { symbols: ['sh600519'] })
     fetchSinaStocks.mockClear()
     vi.setSystemTime(T_SATURDAY)
-    const r = (await h.call('market_quote', { symbols: ['sh600519'] })) as any[]
+    const r = (await h.call('market_quote', { symbols: ['sh600519'] })) as any
     expect(fetchSinaStocks).not.toHaveBeenCalled()
-    expect(r[0]!.price).toBe(1500)
-    expect(r[0]!.stale).toBeFalsy()
+    expect(r.quotes[0]!.price).toBe(1500)
+    expect(r.quotes[0]!.stale).toBeFalsy()
     h.dispose()
   })
 })
@@ -359,12 +364,19 @@ describe('自选增删查', () => {
     h.dispose()
   })
 
-  it('watchlist_add 接受任意 group id(行为记录:无存在性校验)', async () => {
+  it('#37 修复回归:自定义分组不存在时自动创建(幂等);内置组直接归组', async () => {
     const h = await setup()
-    const r = (await h.call('watchlist_add', { symbol: 'sz000001', group: 'custom:不存在' })) as any
-    expect(r.added).toBe(true)
+    await h.call('watchlist_add', { symbol: 'sz000001', group: '科技' })
+    await h.call('watchlist_add', { symbol: 'sh600519', group: '科技' }) // 同组幂等
     const list = (await h.call('watchlist_list')) as any[]
-    expect(list[0]!.groupId).toBe('custom:不存在')
+    expect(list.map((v: any) => v.groupId)).toEqual(['custom:科技', 'custom:科技'])
+    // groups 表只有一条
+    const q = (await h.call('watchlist_list')) as any[]
+    expect(q).toHaveLength(2)
+    // 内置组按 id 归组
+    await h.call('watchlist_add', { symbol: 'hk00700', group: 'builtin:hk' })
+    const list2 = (await h.call('watchlist_list')) as any[]
+    expect(list2[2]!.groupId).toBe('builtin:hk')
     h.dispose()
   })
 })
@@ -561,7 +573,7 @@ describe('简报与定时任务', () => {
     h.dispose()
   })
 
-  it('brief_schedule 创建每日任务(默认 15:10 Asia/Shanghai),重复调用会重复创建(行为记录)', async () => {
+  it('brief_schedule:同 kind 同时间幂等(#37),改时间创建新任务并标注 previousTime', async () => {
     const h = await setup()
     const r = (await h.call('brief_schedule', { kind: 'post_close' })) as any
     expect(r.created).toBe(true)
@@ -570,9 +582,17 @@ describe('简报与定时任务', () => {
     expect(h.scheduleCreate.mock.calls[0]![0]).toMatchObject({
       daily: { time: '15:10:00', time_zone: 'Asia/Shanghai' },
     })
+    // 完全相同的重复调用:不再堆积任务
+    const dup = (await h.call('brief_schedule', { kind: 'post_close' })) as any
+    expect(dup.created).toBe(false)
+    expect(dup.duplicate).toBe(true)
+    expect(h.scheduleCreate).toHaveBeenCalledTimes(1)
+    // 改时间:创建新任务,标注旧时间
     await h.call('brief_schedule', { kind: 'pre_open', time: '08:30' })
-    expect(h.scheduleCreate).toHaveBeenCalledTimes(2)
-    expect(h.scheduleCreate.mock.calls[1]![0]).toMatchObject({ daily: { time: '08:30:00' } })
+    const changed = (await h.call('brief_schedule', { kind: 'pre_open', time: '09:00' })) as any
+    expect(changed.created).toBe(true)
+    expect(changed.previousTime).toBe('08:30:00')
+    expect(h.scheduleCreate).toHaveBeenCalledTimes(3)
     h.dispose()
   })
 })
@@ -593,6 +613,36 @@ describe('K线 / 基金 / 快讯 / 资金流', () => {
     expect(fetchKline).toHaveBeenLastCalledWith('cn_sh:600519', 264)
     const json = (await h.call('market_kline', { symbol: 'sh600519' })) as any
     expect(json.bars).toHaveLength(2)
+    h.dispose()
+  })
+
+  it('#36 修复回归:基金代码必须是 6 位数字', async () => {
+    const h = await setup()
+    const bad = (await h.call('market_fund_estimate', { codes: ['1100'] })) as any
+    expect(bad.error).toContain('invalid fund code')
+    const bad2 = (await h.call('market_fund_history', { code: 'abc123' })) as any
+    expect(bad2.error).toContain('invalid fund code')
+    h.dispose()
+  })
+
+  it('#37 修复回归:holdings_get 返回宿主侧 totalProfitRate(隐私模式同样有值)', async () => {
+    const h = await setup()
+    fetchSinaStocks.mockResolvedValue([sinaQuote('cn_sh:600519', 1500, 1480)])
+    fetchTencentQuotes.mockResolvedValue([tencentQuote('us:AAPL.OQ', 200, 198, 'USD')])
+    fetchFundEstimates.mockResolvedValue([{
+      code: '110022', name: '易方达消费行业', navDate: '2026-11-17', nav: 4.5,
+      estimateNav: 4.6, estimatePercent: 2.22, estimateTime: '2026-11-18 10:00',
+      isEstimate: true as const, source: 'eastmoney',
+    }])
+    fetchFxRates.mockResolvedValue({ USD: 7.2, HKD: 0.93 })
+    await h.call('holdings_set', { symbol: 'sh600519', shares: 100, costPrice: 1450 })
+    await h.call('holdings_set', { symbol: 'us:AAPL.OQ', shares: 10, costPrice: 180 })
+    await h.call('holdings_set', { symbol: 'fund:110022', amount: 10000, costNav: 2.0 })
+    const priv = (await h.call('holdings_get')) as any
+    // 1450*100 + 180*10*7.2 + 2.0*5000 成本;市值 (1500*100 + 200*10*7.2 + 4.6*5000)
+    const cost = 1450 * 100 + 180 * 10 * 7.2 + 2.0 * 5000
+    const value = 1500 * 100 + 200 * 10 * 7.2 + 4.6 * 5000
+    expect(priv.totalProfitRate).toBeCloseTo(((value - cost) / cost) * 100, 4)
     h.dispose()
   })
 
@@ -688,7 +738,7 @@ describe('market_status 与诊断', () => {
     const sh = r.items.find((i: any) => i.market === 'cn_sh')!
     expect(sh.isOpen).toBe(true) // 北京周三 10:00
     const bad = (await h.call('market_status', { markets: ['zzz'] })) as any
-    expect(bad.items[0]!.status).toBe('open') // 未知市场 → marketTimeZone null → open(校验缺口)
+    expect(bad.items[0]!.error).toContain('unknown market') // #36:未知市场明确报错而非误报 open
     h.dispose()
   })
 

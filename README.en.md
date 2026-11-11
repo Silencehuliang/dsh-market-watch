@@ -38,9 +38,9 @@ Then: add watchlist items via search or a chat command, enter positions, and say
 
 All outputs carry `asOf` / `source` / `delayed` markers.
 
-- **market_**: `market_quote` (batch quotes incl. bid1/ask1/orderBookRatio), `market_fund_estimate`, `market_search`, `market_kline` (qfq, json/csv), `market_fund_history`, `market_flow` (north=total-turnover note / south=net buy / sector / concept), `market_news_flash`, `market_fund_rank`, `market_status` (per-market session status + next open), `market_diagnostics` (source health: last error/latency/cooldown), `market_export` (masked unless `full: true`) / `market_import`, `market_watch_hello`
-- **watchlist_**: `watchlist_add` / `watchlist_list` / `watchlist_remove` (idempotent)
-- **holdings_**: `holdings_set` (fund amount→shares reverse-calc via cost NAV), `holdings_get` (privacy mode returns percentages only), `portfolio_summary` (aggregate P/L, distribution, max swing — privacy-aware)
+- **market_**: `market_quote` (batch quotes as `{quotes, missing}`, incl. bid1/ask1/orderBookRatio), `market_fund_estimate` (6-digit code validation), `market_search`, `market_kline` (qfq, json/csv), `market_fund_history`, `market_flow` (north=total-turnover note / south=net buy / sector / concept), `market_news_flash`, `market_fund_rank`, `market_status` (per-market session status + next open; unknown markets error out), `market_diagnostics` (source health: last error/latency/failures/cooldown), `market_export` (masked unless `full: true`) / `market_import`, `market_watch_hello`
+- **watchlist_**: `watchlist_add` / `watchlist_list` / `watchlist_remove` (idempotent; unknown custom groups are auto-created)
+- **holdings_**: `holdings_set` (fund amount→shares reverse-calc via cost NAV), `holdings_get` (privacy mode returns percentages + host-computed total return only), `portfolio_summary` (aggregate P/L, distribution, max swing — privacy-aware)
 - **alert_**: `alert_set` / `alert_list` / `alert_delete` / `alert_ack`
 - **brief_**: `brief_generate` (pre_open/post_close, closed-day short-circuit), `brief_schedule` (via `ctx.schedule`, bound to the creating session)
 - **share_card**: SVG earnings ranking (percentages only)
@@ -61,7 +61,7 @@ Symbols use `{market}:{code}` — e.g. `cn_sh:600519`, `hk:00700`, `us:AAPL`, `f
 
 ## Reliability
 
-Single reliable source + cache fallback (ADR-0001): on failure (HTTP 429/403, timeout, parse errors) the source enters a flat 60s cooldown during which only cache is served; stale cached values are served and clearly marked (`stale`); closed markets trigger no high-frequency polling (built-in 2026 CN holiday table).
+Single reliable source + cache fallback (ADR-0001): outbound requests are **rate-limited per host (≤5 req/s)**; on failure (HTTP 429/403, timeout, parse errors) the source enters an **exponential-backoff cooldown** (2^n, ×2 for rate-limit errors, capped at 16× base) during which only cache is served; stale cached values are served and clearly marked (`stale`); closed markets trigger no high-frequency polling (built-in 2026 CN holiday table).
 
 ## Privacy
 
@@ -72,7 +72,6 @@ Amounts/shares/cost are hidden from model context by default; watchlist names ar
 - Free endpoints have no SLA and may rate-limit, change, or disappear (see Reliability);
 - Trading calendar is a built-in 2026 CN holiday table, needs a yearly update;
 - Futures/FX symbols land in the “Other” group;
-- The mini bar's total portfolio return needs amounts to weight, so it stays hidden under the default privacy mode;
 - Free search matches bare codes/names: queries like `usAAPL` (market-prefixed) return nothing.
 
 ## Compatibility

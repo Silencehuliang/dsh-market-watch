@@ -92,3 +92,70 @@ describe('QuoteService', () => {
     expect(d.avgLatencyMs).toBe(150)
   })
 })
+
+describe('指数退避(#35)', () => {
+  function makeBackoffSvc(fetcher: (symbols: string[]) => Promise<Quote[]>) {
+    let t = 0
+    const svc = new QuoteService(fetcher, { cooldownMs: 60_000, now: () => t })
+    return {
+      svc,
+      advance: (ms: number) => { t += ms },
+      get time() { return t },
+    }
+  }
+
+  it('连续失败冷却时长按 2^(n-1) 增长,封顶 16×base', async () => {
+    const fetcher = vi.fn(async () => { throw new Error('e') })
+    const env = makeBackoffSvc(fetcher)
+    await env.svc.getQuotes(['cn_sh:600519']) // 失败 1 → 冷却 60s
+    env.advance(60_000)
+    await env.svc.getQuotes(['cn_sh:600519']) // 失败 2 → 120s
+    env.advance(61_000) // 仍在第二段冷却内(120s)
+    expect(env.svc.diagnostics().inCooldown).toBe(true)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    env.advance(59_000) // 共 120s 过去
+    await env.svc.getQuotes(['cn_sh:600519']) // 失败 3 → 240s
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    env.advance(120_000) // 只过了 240s 的一半
+    expect(env.svc.diagnostics().inCooldown).toBe(true)
+    env.advance(120_000)
+    await env.svc.getQuotes(['cn_sh:600519']) // 失败 4 → 480s
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    expect(env.svc.diagnostics().consecutiveFailures).toBe(4)
+    env.advance(960_000 * 10) // 远超封顶
+    await env.svc.getQuotes(['cn_sh:600519']) // 失败 ≥6 → 封顶 960s
+    env.advance(960_000)
+    env.advance(1)
+    expect(env.svc.diagnostics().inCooldown).toBe(false)
+  })
+
+  it('429/403 限频错误冷却加倍(仍受 16×base 封顶)', async () => {
+    const fetcher = vi.fn(async () => { throw new Error('sina http 429') })
+    const env = makeBackoffSvc(fetcher)
+    await env.svc.getQuotes(['cn_sh:600519']) // 失败 1 + 限频 → 120s
+    env.advance(60_000)
+    expect(env.svc.diagnostics().inCooldown).toBe(true) // 60s < 120s
+    env.advance(60_000)
+    await env.svc.getQuotes(['cn_sh:600519']) // 失败 2 + 限频 → 240s
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    env.advance(120_000)
+    expect(env.svc.diagnostics().inCooldown).toBe(true)
+  })
+
+  it('成功后失败计数清零,冷却回到基准', async () => {
+    let fail = true
+    const fetcher = vi.fn(async () => {
+      if (fail) throw new Error('e')
+      return [makeQuote('cn_sh:600519', 100)]
+    })
+    const env = makeBackoffSvc(fetcher)
+    await env.svc.getQuotes(['cn_sh:600519'])
+    env.advance(60_000)
+    await env.svc.getQuotes(['cn_sh:600519']) // 失败 2 → 120s
+    fail = false
+    env.advance(120_000)
+    await env.svc.getQuotes(['cn_sh:600519']) // 成功 → failures=0
+    expect(env.svc.diagnostics().consecutiveFailures).toBe(0)
+    expect(env.svc.diagnostics().inCooldown).toBe(false)
+  })
+})

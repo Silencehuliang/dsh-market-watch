@@ -20,11 +20,15 @@
 - **(#32)`market_export` 默认脱敏**:此前无视隐私模式整体 dump 持仓金额与 webhook 地址进模型上下文;现默认脱敏(持仓只含结构字段、settings 去 webhook 地址),显式 `full=true` 才完整导出(ADR-0002 修订)
 - **(#33)holdings 契约字段**:`currency`/`fxRate`/`fxMissing` 此前被 remote schema 静默剥离,汇率缺失降级标注与币种标注到不了 UI;schema 补字段,币种在隐私模式也下发;迷你条外币成本未按汇率折算致总收益率失真一并修复(与 portfolio_summary 同口径),汇率缺失显示 `≈` 提示
 - **(#34)北向资金口径**:`market_flow(kind=north)` 此前返回恒为 0 的净流入(2024-08 起停止披露),误导;现返回 `unavailable: true` + 当日总成交额(唯一仍披露口径),新增 `kind=south` 南向港股通净买入(买−卖,不信任数据源占位净额字段)
+- **(#35)每主机限频 ≤5 req/s + 指数退避**:原宣称未实现;现所有 Provider 出站请求经共享限频器排队,QuoteService 失败冷却按 2^n 指数退避(429/403 加倍,封顶 16×基准),成功清零;诊断输出补 `consecutiveFailures`
+- **(#36)输入校验**:`market_quote` 改返回 `{quotes, missing}`(未知标的不再静默消失);`market_status` 未知市场明确报错(此前误报 open);`market_fund_estimate/history` 校验 6 位数字基金码
+- **(#37)迷你条总收益率 / 分组 / 定时幂等**:组合总收益率改宿主侧按内部金额计算(百分比-only,默认隐私模式同样显示,README 已知限制移除);`watchlist_add` 自定义分组不存在时自动创建;`brief_schedule` 同 kind 同时间幂等,改时间标注 previousTime;提醒基线残留随规则删除清理
+- **杂项**:轮询瞬态失败不再整面板替换列表(顶部提示保留数据);国内期货时间戳改北京时间(此前误用 UTC);移除死代码 `serviceFor`
 
 ### Changed
 
-- 测试:新增离线集成测试(真实 `apply(ctx)` 全链路 33 例)、Remote 契约测试、实机测试套件(`MW_LIVE=1 npx vitest run tests/live`,24 例);单测 120 → 190+
-- 文档:README/README.en 与实测对齐(工具数 26、可靠性口径改为 60s 冷却、北向资金口径失效、`market_export` 隐私例外、搜索裸代码说明);评审未修复项见 issues #32–#38
+- **(#38)测试基建**:m4/kline 的 fetch+parse 全部拆为纯函数(parseSectorFlow/parseNewsFlashText/parseFundRankText/parseKlineResponse/parseFundHistory)+ fixture 单测;新增 client DOM smoke 测试(jsdom + testing-library,覆盖迷你条渲染/点击链路与 K 线空态);新增限频器单测;离线集成(真实 `apply(ctx)` 全链路)/Remote 契约/实机(`MW_LIVE=1 npx vitest run tests/live`)三套齐备,用例 120 → 215+
+- 文档:README/README.en 与实测对齐(工具数 26、北向口径、导出脱敏、限频与退避口径、搜索裸代码说明)
 
 ## [0.1.0] - 2026-11-10
 

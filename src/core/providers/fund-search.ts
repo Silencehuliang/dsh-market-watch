@@ -3,6 +3,7 @@
  * `fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=关键词`
  */
 import type { SearchResultItem } from '../types.js'
+import { fetchJson } from './http.js'
 
 /** 东财基金搜索解析(纯函数,fixture 可测)。 */
 export function parseFundSearch(json: {
@@ -20,13 +21,10 @@ export function parseFundSearch(json: {
     }))
 }
 
-/** 场外基金搜索(宿主侧网络)。 */
+/** 场外基金搜索(宿主侧网络,限频)。 */
 export async function searchFunds(query: string): Promise<SearchResultItem[]> {
-  const res = await fetch(
+  const json = await fetchJson<Parameters<typeof parseFundSearch>[0]>(
     `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeURIComponent(query)}`,
-    { signal: AbortSignal.timeout(8000) },
   )
-  if (!res.ok) throw new Error(`fund search http ${res.status}`)
-  const json = (await res.json()) as Parameters<typeof parseFundSearch>[0]
   return parseFundSearch(json)
 }

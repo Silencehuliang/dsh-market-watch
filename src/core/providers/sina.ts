@@ -1,5 +1,6 @@
 import type { Quote, SymbolId } from '../types.js'
 import { normalizeSymbol, toProviderCode } from '../symbol.js'
+import { fetchGb18030 } from './http.js'
 
 /**
  * 新浪行情 Provider。请求 `https://hq.sinajs.cn/list=代码1,代码2`,
@@ -88,16 +89,12 @@ export function parseSinaBatch(raw: string): Quote[] {
   return quotes
 }
 
-/** 请求新浪行情(宿主侧网络,GB18030 解码)。失败抛错,由 QuoteService 兜底。 */
+/** 请求新浪行情(宿主侧网络,GB18030 解码,每主机限频)。失败抛错,由 QuoteService 兜底。 */
 export async function fetchSinaStocks(symbols: SymbolId[]): Promise<Quote[]> {
   const codes = toSinaCodes(symbols)
-  const res = await fetch(`https://hq.sinajs.cn/list=${codes}`, {
-    headers: { Referer: 'http://finance.sina.com.cn/' },
-    signal: AbortSignal.timeout(8000),
+  const text = await fetchGb18030(`https://hq.sinajs.cn/list=${codes}`, {
+    referer: 'http://finance.sina.com.cn/',
   })
-  if (!res.ok) throw new Error(`sina http ${res.status}`)
-  const buf = await res.arrayBuffer()
-  const text = new TextDecoder('gb18030').decode(buf)
   if (text.includes('FAILED')) throw new Error('sina returned FAILED')
   return parseSinaBatch(text)
 }

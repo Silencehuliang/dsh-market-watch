@@ -1,7 +1,8 @@
 /**
  * M4 Providers:资金流向(东财 push2)/ 快讯(金十)/ 基金排行(东财 rankhandler)。T27 实测。
+ * #38:解析拆为纯函数(fixture 可测);网络统一走限频通道。
  */
-import { fetchGb18030, parseNum } from './http.js'
+import { fetchGb18030, fetchJson, fetchText, parseNum } from './http.js'
 
 // ---------- 资金流向(FR-DATA-11) ----------
 
@@ -12,18 +13,29 @@ export interface FlowItem {
   changePercent: number
 }
 
-/** 板块/概念资金流排行(clist,f62=主力净流入元,f184=涨跌幅%)。 */
+export interface SectorFlowResponse {
+  data?: { diff?: Array<{ f14: string; f62: number; f184: number }> } | null
+}
+
+/** clist 响应解析(纯函数):f62=主力净流入元,f184=涨跌幅%。
+ *  盘前/无数据时字段实测为 "-",统一收敛为 0(FlowItem 无 null 形态,UI 侧本就按 0 呈现)。 */
+export function parseSectorFlow(json: SectorFlowResponse): FlowItem[] {
+  const num = (v: unknown): number => {
+    const x = Number(v)
+    return Number.isFinite(x) ? x : 0
+  }
+  return (json.data?.diff ?? []).map((d) => ({
+    name: d.f14,
+    netInflow: num(d.f62) / 1e8, // 元 → 亿
+    changePercent: num(d.f184),
+  }))
+}
+
+/** 板块/概念资金流排行(限频)。 */
 export async function fetchSectorFlow(kind: 'sector' | 'concept', limit = 10): Promise<FlowItem[]> {
   const fs = kind === 'sector' ? 'm:90+t:2' : 'm:90+t:3'
   const url = `https://push2.eastmoney.com/api/qt/clist/get?fid=f62&po=1&pz=${limit}&pn=1&np=1&fltt=2&invt=2&fs=${fs}&fields=f12,f14,f62,f184`
-  const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
-  if (!res.ok) throw new Error(`flow http ${res.status}`)
-  const json = (await res.json()) as { data?: { diff?: Array<{ f14: string; f62: number; f184: number }> } }
-  return (json.data?.diff ?? []).map((d) => ({
-    name: d.f14,
-    netInflow: d.f62 / 1e8, // 元 → 亿
-    changePercent: d.f184,
-  }))
+  return parseSectorFlow(await fetchJson<SectorFlowResponse>(url))
 }
 
 /**
@@ -83,11 +95,9 @@ export function parseHsgDaily(json: { data?: Record<string, HsgLeg | undefined> 
 const KAMT_URL =
   'https://push2.eastmoney.com/api/qt/kamt/get?fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62'
 
-/** 沪深港通日度数据(宿主侧网络)。 */
+/** 沪深港通日度数据(宿主侧网络,限频)。 */
 export async function fetchHsgDaily(): Promise<{ south: SouthFlow; north: NorthFlowNote }> {
-  const res = await fetch(KAMT_URL, { signal: AbortSignal.timeout(10000) })
-  if (!res.ok) throw new Error(`hsg http ${res.status}`)
-  return parseHsgDaily((await res.json()) as { data?: Record<string, HsgLeg | undefined> })
+  return parseHsgDaily(await fetchJson<{ data?: Record<string, HsgLeg | undefined> }>(KAMT_URL))
 }
 
 // ---------- 快讯(FR-NEWS-01,金十单源;选股宝无公开 API) ----------
@@ -99,20 +109,28 @@ export interface NewsItem {
   content: string
 }
 
-export async function fetchNewsFlash(limit = 20): Promise<NewsItem[]> {
-  const res = await fetch('https://www.jin10.com/flash_newest.js', {
-    signal: AbortSignal.timeout(10000),
-  })
-  if (!res.ok) throw new Error(`news http ${res.status}`)
-  const text = await res.text()
+export interface RawNewsFlash {
+  id: string
+  time: string
+  data?: { title?: string; content?: string }
+}
+
+/** flash_newest.js 文本解析(纯函数):截取首个 `[` 到末个 `]` 的 JSON 数组。 */
+export function parseNewsFlashText(text: string, limit = 20): NewsItem[] {
   const jsonText = text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)
-  const arr = JSON.parse(jsonText) as Array<{ id: string; time: string; data?: { title?: string; content?: string } }>
+  const arr = JSON.parse(jsonText) as RawNewsFlash[]
   return arr.slice(0, limit).map((x) => ({
     id: x.id,
     time: x.time,
     title: x.data?.title ?? '',
     content: x.data?.content ?? '',
   }))
+}
+
+/** 金十快讯(限频)。 */
+export async function fetchNewsFlash(limit = 20): Promise<NewsItem[]> {
+  const text = await fetchText('https://www.jin10.com/flash_newest.js')
+  return parseNewsFlashText(text, limit)
 }
 
 // ---------- 基金排行 ----------
@@ -125,11 +143,8 @@ export interface FundRankItem {
   yearPercent: number
 }
 
-/** 基金排行(sc=6yzf 日涨幅 / 1n 近一年)。 */
-export async function fetchFundRank(sort: 'day' | 'year', limit = 10): Promise<FundRankItem[]> {
-  const sc = sort === 'year' ? '1n' : '6yzf'
-  const url = `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=${sc}&st=fd&pi=1&pn=${limit}&dx=1`
-  const text = await fetchGb18030(url, { referer: 'https://fund.eastmoney.com/data/fundranking.html' })
+/** rankhandler 文本解析(纯函数):提取 datas:["行","行",...] 并按列拆分。 */
+export function parseFundRankText(text: string): FundRankItem[] {
   const m = text.match(/datas:\[(.*?)\]/s)
   if (!m) throw new Error('fund rank data missing')
   const rows = JSON.parse(`[${m[1]}]`) as string[]
@@ -143,4 +158,12 @@ export async function fetchFundRank(sort: 'day' | 'year', limit = 10): Promise<F
       yearPercent: parseNum(f[11]),
     }
   })
+}
+
+/** 基金排行(sc=6yzf 日涨幅 / 1n 近一年;GB18030 + 限频)。 */
+export async function fetchFundRank(sort: 'day' | 'year', limit = 10): Promise<FundRankItem[]> {
+  const sc = sort === 'year' ? '1n' : '6yzf'
+  const url = `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=${sc}&st=fd&pi=1&pn=${limit}&dx=1`
+  const text = await fetchGb18030(url, { referer: 'https://fund.eastmoney.com/data/fundranking.html' })
+  return parseFundRankText(text)
 }

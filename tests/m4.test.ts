@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseHsgDaily } from '../src/core/providers/m4'
+import { parseFundRankText, parseHsgDaily, parseNewsFlashText, parseSectorFlow } from '../src/core/providers/m4'
 
 /** 2026-11-10 实机响应(真实值)。 */
 const KAMT_FIXTURE = {
@@ -47,5 +47,36 @@ describe('parseHsgDaily(#34:北向口径失效后的南向/北向解析)', () =>
   it('腿缺失抛错', () => {
     expect(() => parseHsgDaily({ data: {} })).toThrow('hsg legs missing')
     expect(() => parseHsgDaily({})).toThrow('hsg legs missing')
+  })
+})
+
+describe('parseSectorFlow / parseNewsFlashText / parseFundRankText(#38 拆纯函数)', () => {
+  it('板块资金流:f62 元 → 亿', () => {
+    const items = parseSectorFlow({ data: { diff: [{ f14: '半导体', f62: 5.6e8, f184: 2.1 }] } })
+    expect(items[0]!.name).toBe('半导体')
+    expect(items[0]!.netInflow).toBeCloseTo(5.6, 6)
+    expect(items[0]!.changePercent).toBe(2.1)
+    expect(parseSectorFlow({})).toEqual([])
+  })
+
+  it('金十快讯:截取 JSON 数组、缺省字段兜底', () => {
+    const text = `var abc={"x":1};var list=[{"id":"1","time":"10:00:00","data":{"title":"央行","content":"逆回购"}},{"id":"2","time":"09:00:00"}];`
+    const items = parseNewsFlashText(text, 10)
+    expect(items).toHaveLength(2)
+    expect(items[0]!.title).toBe('央行')
+    expect(items[1]!.title).toBe('')
+    expect(items[1]!.content).toBe('')
+    expect(parseNewsFlashText(text, 1)).toHaveLength(1)
+  })
+
+  it('基金排行:datas 列拆分(0 代码/名称/4 净值/6 日涨幅/11 年涨幅)', () => {
+    const text = `var rankData = {datas:["110022,易方达消费行业,2026-11-10,1.0,4.500,4.500,2.20,,,,,30.10"],allRecords:1};`
+    const items = parseFundRankText(text)
+    expect(items[0]!.code).toBe('110022')
+    expect(items[0]!.name).toBe('易方达消费行业')
+    expect(items[0]!.nav).toBeCloseTo(4.5)
+    expect(items[0]!.dayPercent).toBeCloseTo(2.2)
+    expect(items[0]!.yearPercent).toBeCloseTo(30.1)
+    expect(() => parseFundRankText('no data here')).toThrow('fund rank data missing')
   })
 })

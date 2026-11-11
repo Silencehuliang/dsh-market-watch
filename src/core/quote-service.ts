@@ -10,6 +10,8 @@ export interface QuoteServiceDiagnostics {
   lastError: string | null
   lastSuccessAt: number
   inCooldown: boolean
+  /** 连续失败次数(成功后清零;指数退避依据)。 */
+  consecutiveFailures: number
   /** 最近一次成功请求的耗时(ms);从未成功为 null。 */
   lastLatencyMs: number | null
   /** 成功请求的平均耗时(ms);从未成功为 null。 */
@@ -19,12 +21,14 @@ export interface QuoteServiceDiagnostics {
 /**
  * 行情编排:缓存 + 单源兜底 + 冷却期(ADR-0001)。
  * 主源失败(抛错)时返回缓存并标 stale;冷却期内不再请求主源。
+ * #35:冷却时长指数退避(2^n,封顶 16×base),限频错误(429/403)额外加倍;成功清零。
  */
 export class QuoteService {
   private cache = new Map<SymbolId, Quote>()
   private cooldownUntil = 0
   private lastError: string | null = null
   private lastSuccessAt = 0
+  private failures = 0
   private lastLatencyMs: number | null = null
   private totalLatencyMs = 0
   private successCount = 0
@@ -51,6 +55,7 @@ export class QuoteService {
       const bySymbol = new Map(fresh.map((q) => [q.symbol, q]))
       this.lastSuccessAt = now
       this.lastError = null
+      this.failures = 0
       for (const q of fresh) this.cache.set(q.symbol, q)
 
       return symbols
@@ -62,8 +67,15 @@ export class QuoteService {
         })
         .filter((q): q is Quote => q !== null)
     } catch (e) {
-      this.lastError = e instanceof Error ? e.message : String(e)
-      this.cooldownUntil = now + this.opts.cooldownMs
+      const msg = e instanceof Error ? e.message : String(e)
+      this.lastError = msg
+      this.failures += 1
+      const base = this.opts.cooldownMs
+      // 指数退避:2^(n-1),封顶 16×base;限频错误(429/403)再加倍
+      const rateLimited = /\bhttp (429|403)\b/.test(msg)
+      const exp = 2 ** Math.min(this.failures - 1, 4)
+      const ms = Math.min(base * exp * (rateLimited ? 2 : 1), base * 16)
+      this.cooldownUntil = now + ms
       return this.fromCache(symbols)
     }
   }
@@ -73,6 +85,7 @@ export class QuoteService {
       lastError: this.lastError,
       lastSuccessAt: this.lastSuccessAt,
       inCooldown: this.opts.now() < this.cooldownUntil,
+      consecutiveFailures: this.failures,
       lastLatencyMs: this.lastLatencyMs,
       avgLatencyMs: this.successCount > 0 ? this.totalLatencyMs / this.successCount : null,
     }

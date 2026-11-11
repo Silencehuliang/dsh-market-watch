@@ -3,6 +3,7 @@
  * 返回 `v_hint="市场~代码~名称~拼音~类型^..."`,名称为 \\uXXXX 转义,GB 页面但内容 ASCII 安全。
  */
 import { normalizeSymbol } from '../symbol.js'
+import { fetchText } from './http.js'
 import type { SearchResultItem } from '../types.js'
 
 function classify(t: string): string {
@@ -51,12 +52,8 @@ export function parseTencentSearch(raw: string): SearchResultItem[] {
   return items
 }
 
-/** 腾讯搜索(宿主侧网络)。 */
+/** 腾讯搜索(宿主侧网络,限频)。 */
 export async function searchTencent(query: string): Promise<SearchResultItem[]> {
-  const res = await fetch(
-    `https://smartbox.gtimg.cn/s3/?v=2&q=${encodeURIComponent(query)}&t=all`,
-    { signal: AbortSignal.timeout(8000) },
-  )
-  if (!res.ok) throw new Error(`tencent search http ${res.status}`)
-  return parseTencentSearch(await res.text())
+  const text = await fetchText(`https://smartbox.gtimg.cn/s3/?v=2&q=${encodeURIComponent(query)}&t=all`)
+  return parseTencentSearch(text)
 }
